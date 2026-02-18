@@ -1,3 +1,16 @@
+## Version: 8.3.5
+* Fix segfault in fb_bg_composite() (triggered by transparent=true in default
+  config): missing gdk_window_end_draw_frame() left the window locked; second
+  call returned NULL drawing context; cairo_paint_with_alpha(NULL,...) crashed
+  at address 0x4.  Also fix NULL rgba passed to gdk_cairo_set_source_rgba()
+  (now built from tintcolor) and remove incorrect cairo_destroy() on a context
+  owned by the drawing context.
+* Fix gdk_pixbuf_scale_simple dest_width > 0 assertion: clamp taskbar iconsize
+  to a minimum of 1 when panel height equals button minimum height in GTK3.
+* Fix gtk_widget_set_halign on NULL: gtk_button_new() has no child in GTK3;
+  remove the call on gtk_bin_get_child() immediately after button creation.
+
+
 ## Version: 8.3.4
 * Fix segfault at startup (address 0x20 = NULL->type in class_register):
   taskbar is split across 4 TUs all compiled with -DPLUGIN; the PLUGIN macro

@@ -54,12 +54,14 @@ taskbar_constructor(plugin_instance *p)
         tb->task_height_max = TASK_HEIGHT_MAX;
     if (p->panel->orientation == GTK_ORIENTATION_HORIZONTAL) {
         tb->iconsize = MIN(p->panel->ah, tb->task_height_max) - req.height;
+        if (tb->iconsize < 1) tb->iconsize = 1;
         if (tb->icons_only)
             tb->task_width_max = tb->iconsize + req.width;
     } else {
         if (p->panel->aw <= 30)
             tb->icons_only = 1;
         tb->iconsize = MIN(p->panel->aw, tb->task_height_max) - req.height;
+        if (tb->iconsize < 1) tb->iconsize = 1;
         if (tb->icons_only)
             tb->task_width_max = tb->iconsize + req.height;
     }

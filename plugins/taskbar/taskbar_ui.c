@@ -209,7 +209,8 @@ tk_build_gui(taskbar_priv *tb, task *tk)
 
     /* button */
     tk->button = gtk_button_new();
-    gtk_widget_set_halign(gtk_bin_get_child(GTK_BIN(tk->button)), GTK_ALIGN_CENTER);
+    /* gtk_button_new() has no child in GTK3; halign is set per-widget on
+     * tk->image and tk->label below after they are created */
     gtk_widget_show(tk->button);
     gtk_container_set_border_width(GTK_CONTAINER(tk->button), 0);
     gtk_widget_add_events (tk->button, GDK_BUTTON_RELEASE_MASK

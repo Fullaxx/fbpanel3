@@ -257,12 +257,31 @@ fb_bg_composite(GdkWindow *base, guint32 tintcolor, gint alpha)
 {
     cairo_t *cr;
     GdkDrawingContext *content;
+    GdkRGBA rgba;
+    cairo_region_t *region;
 
-    content = gdk_window_begin_draw_frame(base, cairo_region_create());
+    region = cairo_region_create();
+    content = gdk_window_begin_draw_frame(base, region);
+    cairo_region_destroy(region);
+    if (!content)
+        return;
+
     cr = gdk_drawing_context_get_cairo_context(content);
-    gdk_cairo_set_source_rgba(cr, NULL);
+    if (!cr) {
+        gdk_window_end_draw_frame(base, content);
+        return;
+    }
+
+    /* Unpack tintcolor (0xRRGGBB) into a GdkRGBA and paint the tint overlay */
+    rgba.red   = ((tintcolor >> 16) & 0xff) / 255.0;
+    rgba.green = ((tintcolor >>  8) & 0xff) / 255.0;
+    rgba.blue  = ((tintcolor      ) & 0xff) / 255.0;
+    rgba.alpha = 1.0;
+    gdk_cairo_set_source_rgba(cr, &rgba);
     cairo_paint_with_alpha(cr, (double) alpha / 255);
-    cairo_destroy(cr);
+
+    /* cr is owned by the drawing context — do NOT cairo_destroy() it */
+    gdk_window_end_draw_frame(base, content);
     fb_bg_changed(fb_bg_get_for_display());
     return;
 }

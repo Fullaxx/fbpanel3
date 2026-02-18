@@ -253,15 +253,8 @@ launchbar_constructor(plugin_instance *p)
     launchbar_priv *lb; 
     int i;
     xconf *pxc;
-    GtkWidget *ali;
-    static gchar *launchbar_rc = "style 'launchbar-style'\n"
-        "{\n"
-        "GtkWidget::focus-line-width = 0\n"
-        "GtkWidget::focus-padding = 0\n"
-        "GtkButton::default-border = { 0, 0, 0, 0 }\n"
-        "GtkButton::default-outside-border = { 0, 0, 0, 0 }\n"
-        "}\n"
-        "widget '*' style 'launchbar-style'";
+    static const gchar *launchbar_css =
+        "#launchbar button { padding: 0; margin: 0; outline-width: 0; }";
    
     ENTER;
     lb = (launchbar_priv *) p;
@@ -269,18 +262,22 @@ launchbar_constructor(plugin_instance *p)
     DBG("iconsize=%d\n", lb->iconsize);
 
     gtk_widget_set_name(p->pwid, "launchbar");
-    gtk_rc_parse_string(launchbar_rc);
-    //get_button_spacing(&req, GTK_CONTAINER(p->pwid), "");
-    ali = gtk_alignment_new(0.5, 0.5, 0, 0);
-    g_signal_connect(G_OBJECT(ali), "size-allocate",
+    {
+        GtkCssProvider *css = gtk_css_provider_new();
+        gtk_css_provider_load_from_data(css, launchbar_css, -1, NULL);
+        gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+            GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_unref(css);
+    }
+    g_signal_connect(G_OBJECT(p->pwid), "size-allocate",
         (GCallback) launchbar_size_alloc, lb);
-    gtk_container_set_border_width(GTK_CONTAINER(ali), 0);
-    gtk_container_add(GTK_CONTAINER(p->pwid), ali);
     lb->box = gtk_bar_new(p->panel->orientation, 0,
         lb->iconsize, lb->iconsize);
-    gtk_container_add(GTK_CONTAINER(ali), lb->box);
-    gtk_container_set_border_width(GTK_CONTAINER (lb->box), 0);
-    gtk_widget_show_all(ali);
+    gtk_widget_set_halign(lb->box, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(lb->box, GTK_ALIGN_CENTER);
+    gtk_container_set_border_width(GTK_CONTAINER(lb->box), 0);
+    gtk_container_add(GTK_CONTAINER(p->pwid), lb->box);
+    gtk_widget_show_all(lb->box);
     
     for (i = 0; (pxc = xconf_find(p->xc, "button", i)); i++)
         read_button(p, pxc);

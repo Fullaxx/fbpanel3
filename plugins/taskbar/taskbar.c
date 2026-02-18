@@ -64,8 +64,8 @@ typedef struct _taskbar{
     GHashTable  *task_list;
     GtkWidget *hbox, *bar, *space, *menu;
     GdkPixbuf *gen_pixbuf;
-    GtkStateType normal_state;
-    GtkStateType focused_state;
+    GtkStateFlags normal_state;
+    GtkStateFlags focused_state;
     int num_tasks;
     int task_width;
     int vis_task_num;
@@ -97,16 +97,8 @@ typedef struct _taskbar{
 } taskbar_priv;
 
 
-static gchar *taskbar_rc = "style 'taskbar-style'\n"
-"{\n"
-"GtkWidget::focus-line-width = 0\n"
-"GtkWidget::focus-padding = 0\n"
-"GtkButton::default-border = { 0, 0, 0, 0 }\n"
-"GtkButton::default-outside-border = { 0, 0, 0, 0 }\n"
-"GtkButton::default_border = { 0, 0, 0, 0 }\n"
-"GtkButton::default_outside_border = { 0, 0, 0, 0 }\n"
-"}\n"
-"widget '*.taskbar.*' style 'taskbar-style'";
+static const gchar *taskbar_css =
+    "#taskbar button { padding: 0; margin: 0; outline-width: 0; }";
 
 static gboolean use_net_active=FALSE;
 
@@ -591,8 +583,8 @@ static gboolean
 on_flash_win( task *tk )
 {
     tk->flash_state = !tk->flash_state;
-    gtk_widget_set_state(tk->button,
-          tk->flash_state ? GTK_STATE_SELECTED : tk->tb->normal_state);
+    gtk_widget_set_state_flags(tk->button,
+          tk->flash_state ? GTK_STATE_FLAG_SELECTED : tk->tb->normal_state, TRUE);
     gtk_widget_queue_draw(tk->button);
     return TRUE;
 }
@@ -642,8 +634,8 @@ static void
 tk_callback_leave( GtkWidget *widget, task *tk)
 {
     ENTER;
-    gtk_widget_set_state(widget,
-          (tk->focused) ? tk->tb->focused_state : tk->tb->normal_state);
+    gtk_widget_set_state_flags(widget,
+          (tk->focused) ? tk->tb->focused_state : tk->tb->normal_state, TRUE);
     RET();
 }
 
@@ -652,8 +644,8 @@ static void
 tk_callback_enter( GtkWidget *widget, task *tk )
 {
     ENTER;
-    gtk_widget_set_state(widget,
-          (tk->focused) ? tk->tb->focused_state : tk->tb->normal_state);
+    gtk_widget_set_state_flags(widget,
+          (tk->focused) ? tk->tb->focused_state : tk->tb->normal_state, TRUE);
     RET();
 }
 
@@ -825,8 +817,7 @@ tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
         DBG("XLowerWindow %x\n", tk->win);
         */
         tk->tb->menutask = tk;
-        gtk_menu_popup (GTK_MENU (tk->tb->menu), NULL, NULL,
-            (GtkMenuPositionFunc)menu_pos, widget, event->button, event->time);
+        gtk_menu_popup_at_pointer(GTK_MENU(tk->tb->menu), (GdkEvent *)event);
 
     }
     XSync (GDK_DPY, False);
@@ -840,8 +831,8 @@ tk_update(gpointer key, task *tk, taskbar_priv *tb)
     ENTER;
     g_assert ((tb != NULL) && (tk != NULL));
     if (task_visible(tb, tk)) {
-        gtk_widget_set_state (tk->button,
-              (tk->focused) ? tb->focused_state : tb->normal_state);
+        gtk_widget_set_state_flags(tk->button,
+              (tk->focused) ? tb->focused_state : tb->normal_state, TRUE);
         gtk_widget_queue_draw(tk->button);
         //_gtk_button_set_depressed(GTK_BUTTON(tk->button), tk->focused);
         gtk_widget_show(tk->button);
@@ -1279,17 +1270,13 @@ tb_make_menu(GtkWidget *widget, taskbar_priv *tb)
     ENTER;
     menu = gtk_menu_new ();
 
-    mi = gtk_image_menu_item_new_with_label (_("Raise"));
-    gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(mi),
-          gtk_image_new_from_stock(GTK_STOCK_GO_UP, GTK_ICON_SIZE_MENU));
+    mi = gtk_menu_item_new_with_label(_("Raise"));
     gtk_menu_shell_append (GTK_MENU_SHELL (menu), mi);
     g_signal_connect(G_OBJECT(mi), "activate",
         (GCallback)menu_raise_window, tb);
     gtk_widget_show (mi);
 
-    mi = gtk_image_menu_item_new_with_label (_("Iconify"));
-    gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(mi),
-          gtk_image_new_from_stock(GTK_STOCK_UNDO, GTK_ICON_SIZE_MENU));
+    mi = gtk_menu_item_new_with_label(_("Iconify"));
     gtk_menu_shell_append (GTK_MENU_SHELL (menu), mi);
     g_signal_connect(G_OBJECT(mi), "activate",
         (GCallback)menu_iconify_window, tb);
@@ -1300,24 +1287,22 @@ tb_make_menu(GtkWidget *widget, taskbar_priv *tb)
     for (i = 0; i < tb->desk_num; i++) {
         buf = g_strdup_printf("%d  %s", i + 1,
             (i < tb->desk_namesno) ? tb->desk_names[i] : "");
-        mi = gtk_image_menu_item_new_with_label (buf);
+        mi = gtk_menu_item_new_with_label(buf);
         g_object_set_data(G_OBJECT(mi), "num", GINT_TO_POINTER(i));
         gtk_menu_shell_append (GTK_MENU_SHELL (submenu), mi);
         g_signal_connect(G_OBJECT(mi), "button_press_event",
             (GCallback)send_to_workspace, tb);
         g_free(buf);
     }
-    mi = gtk_image_menu_item_new_with_label(_("All workspaces"));
+    mi = gtk_menu_item_new_with_label(_("All workspaces"));
     g_object_set_data(G_OBJECT(mi), "num", GINT_TO_POINTER(ALL_WORKSPACES));
     g_signal_connect(mi, "activate",
         (GCallback)send_to_workspace, tb);
     gtk_menu_shell_append (GTK_MENU_SHELL (submenu), mi);
     gtk_widget_show_all(submenu);
 
-    mi = gtk_image_menu_item_new_with_label(_("Move to workspace"));
+    mi = gtk_menu_item_new_with_label(_("Move to workspace"));
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(mi), submenu);
-    gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(mi),
-          gtk_image_new_from_stock(GTK_STOCK_JUMP_TO, GTK_ICON_SIZE_MENU));
     gtk_menu_shell_append (GTK_MENU_SHELL (menu), mi);
     gtk_widget_show (mi);
 
@@ -1325,9 +1310,7 @@ tb_make_menu(GtkWidget *widget, taskbar_priv *tb)
     gtk_menu_shell_append (GTK_MENU_SHELL (menu), mi);
     gtk_widget_show (mi);
 
-    /* we want this item to be farest from mouse pointer */
-    //mi = gtk_menu_item_new_with_label ("Close Window");
-    mi = gtk_image_menu_item_new_from_stock(GTK_STOCK_CLOSE, NULL);
+    mi = gtk_menu_item_new_with_label(_("Close"));
     gtk_menu_shell_append (GTK_MENU_SHELL (menu), mi);
     g_signal_connect(G_OBJECT(mi), "activate",
         (GCallback)menu_close_window, tb);
@@ -1432,7 +1415,14 @@ taskbar_constructor(plugin_instance *p)
 
     ENTER;
     tb = (taskbar_priv *) p;
-    gtk_rc_parse_string(taskbar_rc);
+    gtk_widget_set_name(p->pwid, "taskbar");
+    {
+        GtkCssProvider *css = gtk_css_provider_new();
+        gtk_css_provider_load_from_data(css, taskbar_css, -1, NULL);
+        gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+            GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_unref(css);
+    }
     get_button_spacing(&req, GTK_CONTAINER(p->pwid), "");
     net_active_detect();
 
@@ -1446,8 +1436,8 @@ taskbar_constructor(plugin_instance *p)
     tb->task_width_max    = TASK_WIDTH_MAX;
     tb->task_height_max   = p->panel->max_elem_height;
     tb->task_list         = g_hash_table_new(g_int_hash, g_int_equal);
-    tb->focused_state     = GTK_STATE_ACTIVE;
-    tb->normal_state      = GTK_STATE_NORMAL;
+    tb->focused_state     = GTK_STATE_FLAG_ACTIVE;
+    tb->normal_state      = GTK_STATE_FLAG_NORMAL;
     tb->spacing           = 0;
     tb->use_mouse_wheel   = 1;
     tb->use_urgency_hint  = 1;

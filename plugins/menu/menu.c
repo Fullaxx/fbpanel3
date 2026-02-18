@@ -88,24 +88,14 @@ menu_create_item(xconf *xc, GtkWidget *menu, menu_priv *m)
     
     cmd = name = fname = action = iname = NULL;
     XCG(xc, "name", &name, str);
-    mi = gtk_image_menu_item_new_with_label(name ? name : "");
+    mi = gtk_menu_item_new_with_label(name ? name : "");
     gtk_container_set_border_width(GTK_CONTAINER(mi), 0);
     XCG(xc, "image", &fname, str);
     fname = expand_tilda(fname);
     XCG(xc, "icon", &iname, str);
-    if (fname || iname)
-    {
-        GdkPixbuf *pb;
-        
-        if ((pb = fb_pixbuf_new(iname, fname, m->icon_size, m->icon_size,
-                    FALSE)))
-        {
-            gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(mi),
-                    gtk_image_new_from_pixbuf(pb));
-            g_object_unref(G_OBJECT(pb));
-        }
-    }
     g_free(fname);
+    g_free(iname);
+    iname = NULL;
 
     if (menu)
     {
@@ -250,9 +240,7 @@ my_button_pressed(GtkWidget *widget, GdkEventButton *event, plugin_instance *p)
                 menu_create(p);
             if (p->panel->autohide)
                 ah_stop(p->panel);
-            gtk_menu_popup(GTK_MENU(m->menu),
-                NULL, NULL, (GtkMenuPositionFunc)menu_pos, widget,
-                event->button, event->time);
+            gtk_menu_popup_at_pointer(GTK_MENU(m->menu), (GdkEvent *)event);
         }
     }
     RET(TRUE);

@@ -195,8 +195,7 @@ gconf_edit_color_cb(GtkColorButton *w, xconf *xc)
     xconf_set_value(xc, gdk_color_to_RRGGBB(&c));
     if ((xc_alpha = g_object_get_data(G_OBJECT(w), "alpha")))
     {
-        guint16 a = gtk_color_button_get_alpha(GTK_COLOR_BUTTON(w));
-        a >>= 8;
+        guint16 a = (guint16)(c.alpha * 255.0 + 0.5);
         xconf_set_int(xc_alpha, (int) a);
     }
 }

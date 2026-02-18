@@ -55,6 +55,7 @@ static void gtk_bgbox_get_preferred_height (GtkWidget *widget, gint *minimum, gi
 static void gtk_bgbox_size_allocate (GtkWidget *widget, GtkAllocation *allocation);
 static void gtk_bgbox_style_updated (GtkWidget *widget);
 static gboolean gtk_bgbox_configure_event(GtkWidget *widget, GdkEventConfigure *e);
+static gboolean gtk_bgbox_draw      (GtkWidget *widget, cairo_t *cr);
 
 static void gtk_bgbox_finalize (GObject *object);
 
@@ -78,6 +79,7 @@ gtk_bgbox_class_init (GtkBgboxClass *class)
     widget_class->size_allocate        = gtk_bgbox_size_allocate;
     widget_class->style_updated        = gtk_bgbox_style_updated;
     widget_class->configure_event      = gtk_bgbox_configure_event;
+    widget_class->draw                 = gtk_bgbox_draw;
 
     object_class->finalize = gtk_bgbox_finalize;
 }
@@ -260,6 +262,19 @@ gtk_bgbox_size_allocate (GtkWidget *widget, GtkAllocation *wa)
 }
 
 
+static gboolean
+gtk_bgbox_draw(GtkWidget *widget, cairo_t *cr)
+{
+    GtkBgboxPrivate *priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
+
+    if (priv->pixmap) {
+        cairo_set_source_surface(cr, priv->pixmap, 0, 0);
+        cairo_paint(cr);
+    }
+    GTK_WIDGET_CLASS(parent_class)->draw(widget, cr);
+    return FALSE;
+}
+
 static void
 gtk_bgbox_bg_changed(FbBg *bg, GtkWidget *widget)
 {
@@ -290,9 +305,7 @@ gtk_bgbox_set_background(GtkWidget *widget, int bg_type, guint32 tintcolor, gint
     }
     priv->bg_type = bg_type;
     if (priv->bg_type == BG_STYLE) {
-        /* Let GTK3 handle background via style context */
-        if (gtk_widget_get_realized(widget))
-            gdk_window_set_background_pattern(gtk_widget_get_window(widget), NULL);
+        /* Let GTK3 handle background via CSS/style context */
         if (priv->sid) {
             g_signal_handler_disconnect(priv->bg, priv->sid);
             priv->sid = 0;
@@ -333,7 +346,6 @@ gtk_bgbox_set_bg_root(GtkWidget *widget, GtkBgboxPrivate *priv)
     priv->pixmap = fb_bg_get_xroot_pix_for_win(priv->bg, widget);
     window = gtk_widget_get_window(widget);
     if (!priv->pixmap) {
-        gdk_window_set_background_pattern(window, NULL);
         gtk_widget_get_allocation(widget, &alloc);
         gtk_widget_queue_draw_area(widget, 0, 0, alloc.width, alloc.height);
         DBG("no root pixmap was found\n");
@@ -341,11 +353,6 @@ gtk_bgbox_set_bg_root(GtkWidget *widget, GtkBgboxPrivate *priv)
     }
     if (priv->alpha)
         fb_bg_composite(window, priv->tintcolor, priv->alpha);
-    {
-        cairo_pattern_t *pattern = cairo_pattern_create_for_surface(priv->pixmap);
-        gdk_window_set_background_pattern(window, pattern);
-        cairo_pattern_destroy(pattern);
-    }
     RET();
 }
 
@@ -355,6 +362,5 @@ gtk_bgbox_set_bg_inherit(GtkWidget *widget, GtkBgboxPrivate *priv)
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
 
     ENTER;
-    gdk_window_set_background_pattern(gtk_widget_get_window(widget), NULL);
     RET();
 }

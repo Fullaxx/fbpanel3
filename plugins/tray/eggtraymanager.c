@@ -218,7 +218,8 @@ egg_tray_manager_make_socket_transparent (GtkWidget *widget,
     GdkWindow *win = gtk_widget_get_window(widget);
     if (!gtk_widget_get_has_window(widget) || win == NULL)
         return;
-    gdk_window_set_background_pattern(win, NULL);
+    /* GTK3: gdk_window_set_background_pattern removed; NULL pattern is default */
+    (void)win;
 }
 
 static void
@@ -496,8 +497,7 @@ egg_tray_manager_manage_xscreen (EggTrayManager *manager, Screen *xscreen)
   if (egg_tray_manager_check_running_xscreen (xscreen))
     return FALSE;
 #endif
-  screen = gdk_display_get_screen (gdk_x11_lookup_xdisplay (DisplayOfScreen (xscreen)),
-				   XScreenNumberOfScreen (xscreen));
+  screen = gdk_display_get_default_screen (gdk_x11_lookup_xdisplay (DisplayOfScreen (xscreen)));
   
   invisible = gtk_invisible_new_for_screen (screen);
   gtk_widget_realize (invisible);

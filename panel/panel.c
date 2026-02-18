@@ -378,7 +378,11 @@ mouse_watch(panel *p)
     gint x, y;
 
     ENTER;
-    gdk_display_get_pointer(gdk_display_get_default(), NULL, &x, &y, NULL);
+    {
+        GdkDisplay *_dpy = gdk_display_get_default();
+        GdkDevice  *_ptr = gdk_seat_get_pointer(gdk_display_get_default_seat(_dpy));
+        gdk_device_get_position(_ptr, NULL, &x, &y);
+    }
 
 /*  Reduce sensitivity area
     p->ah_far = ((x < p->cx - GAP) || (x > p->cx + p->cw + GAP)
@@ -516,7 +520,7 @@ panel_make_menu(panel *p)
     menu = gtk_menu_new();
 
     /* panel's preferences */
-    mi = gtk_image_menu_item_new_from_stock(GTK_STOCK_PREFERENCES, NULL);
+    mi = gtk_menu_item_new_with_label(_("Preferences"));
     gtk_menu_shell_append (GTK_MENU_SHELL (menu), mi);
     g_signal_connect_swapped(G_OBJECT(mi), "activate",
         (GCallback)configure, p->xc);
@@ -528,7 +532,7 @@ panel_make_menu(panel *p)
     gtk_widget_show (mi);
 
     /* about */
-    mi = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
+    mi = gtk_menu_item_new_with_label(_("About"));
     gtk_menu_shell_append (GTK_MENU_SHELL (menu), mi);
     g_signal_connect(G_OBJECT(mi), "activate",
         (GCallback)about, p);
@@ -544,8 +548,7 @@ panel_button_press_event(GtkWidget *widget, GdkEventButton *event, panel *p)
     if (event->type == GDK_BUTTON_PRESS && event->button == 3
           && event->state & GDK_CONTROL_MASK) {
         DBG("ctrl-btn3\n");
-        gtk_menu_popup (GTK_MENU (p->menu), NULL, NULL, NULL,
-            NULL, event->button, event->time);
+        gtk_menu_popup_at_pointer(GTK_MENU(p->menu), (GdkEvent *)event);
         RET(TRUE);
     }
     RET(FALSE);
@@ -597,7 +600,7 @@ panel_start_gui(panel *p)
         (GCallback) panel_scroll_event, p);
 
     gtk_window_set_resizable(GTK_WINDOW(p->topgwin), FALSE);
-    gtk_window_set_wmclass(GTK_WINDOW(p->topgwin), "panel", "fbpanel");
+    /* gtk_window_set_wmclass deprecated in GTK3; WM_CLASS set by GDK from binary name */
     gtk_window_set_title(GTK_WINDOW(p->topgwin), "panel");
     gtk_window_set_position(GTK_WINDOW(p->topgwin), GTK_WIN_POS_NONE);
     gtk_window_set_decorated(GTK_WINDOW(p->topgwin), FALSE);

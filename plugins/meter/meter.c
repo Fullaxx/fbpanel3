@@ -73,8 +73,8 @@ meter_constructor(plugin_instance *p)
     ENTER;
     m = (meter_priv *) p;
     m->meter = gtk_image_new();
-    gtk_misc_set_alignment(GTK_MISC(m->meter), 0.5, 0.5);
-    gtk_misc_set_padding(GTK_MISC(m->meter), 0, 0);
+    gtk_widget_set_halign(m->meter, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(m->meter, GTK_ALIGN_CENTER);
     gtk_widget_show(m->meter);
     gtk_container_add(GTK_CONTAINER(p->pwid), m->meter);
     m->cur_icon = -1;

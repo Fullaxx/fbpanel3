@@ -181,7 +181,7 @@ panel_destroy_event(GtkWidget * widget, GdkEvent * event, gpointer data)
 }
 
 static void
-panel_size_alloc(GtkWidget *widget, GdkRectangle *a, panel *p)
+panel_size_alloc(GtkWidget *widget, GtkAllocation *a, panel *p)
 {
     DBG("alloc %d %d\n", a->width, a->height);
     /* GTK3 replacement for the removed 'size-request' signal:
@@ -796,7 +796,7 @@ panel_stop(panel *p)
 void
 usage()
 {
-    printf("fbpanel %s - lightweight GTK2+ panel for UNIX desktops\n", version);
+    printf("fbpanel %s - lightweight GTK3 panel for UNIX desktops\n", version);
     printf("Command line options:\n");
     printf(" --help      -- print this help and exit\n");
     printf(" --version   -- print version and exit\n");

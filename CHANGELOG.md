@@ -1,3 +1,13 @@
+## Version: 8.3.11
+* panel.c: fix panel_size_alloc signal handler to use GtkAllocation *
+  instead of GdkRectangle * (identical layout but wrong type for the
+  size-allocate signal; can confuse GObject marshaling in debug builds).
+* tray/main.c: replace GTK2-era reflow hack in tray_bg_changed
+  (hide + gtk_events_pending/gtk_main_iteration + show) with a single
+  gtk_widget_queue_resize() call.  The old pattern forces nested event
+  processing which can cause reentrancy in GTK3 signal callbacks.
+* panel.c: update --help text from "GTK2+" to "GTK3".
+
 ## Version: 8.3.10
 * Fix taskbar_size_alloc calling gtk_widget_queue_resize from within a
   size-allocate signal handler.  gtk_bar_set_dimension (called from the

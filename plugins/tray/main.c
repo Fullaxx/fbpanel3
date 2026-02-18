@@ -30,16 +30,9 @@ typedef struct {
 static void
 tray_bg_changed(FbBg *bg, GtkWidget *widget)
 {
-    {
-        GtkAllocation alloc;
-        gtk_widget_get_allocation(widget, &alloc);
-        gtk_widget_set_size_request(widget, alloc.width, alloc.height);
-    }
-    gtk_widget_hide(widget);
-    if (gtk_events_pending())
-        gtk_main_iteration();
-    gtk_widget_show(widget);
-    gtk_widget_set_size_request(widget, -1, -1);
+    /* GTK2 used hide+show+gtk_main_iteration() to force a synchronous
+     * reflow after the wallpaper changed.  In GTK3 queue_resize suffices. */
+    gtk_widget_queue_resize(widget);
     return;
 }
 

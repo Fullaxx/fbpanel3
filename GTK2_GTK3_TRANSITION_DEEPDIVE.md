@@ -275,7 +275,7 @@ only WM_HINTS icons (not NetWM `_NET_WM_ICON`) show no icon in the pager.
 | `panel/gtkbar.c` | None | ~~C-1~~ (fixed v8.3.7) | Clean |
 | `panel/gtkbar.h` | None | None | Clean |
 | `panel/gtkbgbox.c` | None | ~~H-1/M-3~~ (fixed v8.3.8) | Clean |
-| `panel/panel.c` | None | M-1, L-1 | Fix in v8.3.11 |
+| `panel/panel.c` | None | ~~M-1, L-1~~ (fixed v8.3.11) | Clean |
 | `panel/plugin.c` | None | None | Clean |
 | `panel/plugin.h` | None | None | Clean |
 | `panel/misc.c` | None | None | Clean |
@@ -285,7 +285,7 @@ only WM_HINTS icons (not NetWM `_NET_WM_ICON`) show no icon in the pager.
 | `plugins/taskbar/taskbar_task.c` | None | None | Clean |
 | `plugins/taskbar/taskbar_net.c` | None | None | Clean |
 | `plugins/taskbar/taskbar.c` | None | None | Clean |
-| `plugins/tray/main.c` | M-2 (`gtk_events_pending`) | M-2 | Fix in v8.3.11 |
+| `plugins/tray/main.c` | None | ~~M-2~~ (fixed v8.3.11) | Clean |
 | `plugins/pager/pager.c` | None | M-5, L-2 | Acceptable stubs |
 | `plugins/chart/chart.c` | None | None | Clean |
 | `plugins/cpu/cpu.c` | None | None | Clean |

@@ -1,3 +1,8 @@
+## Version: 8.3.1
+* Fix build error: restore #include "dbg.h" in battery.c for DBG() calls
+  in the included os_linux.c.inc (caught by gcc on Debian trixie)
+
+
 ## Version: 8.3.0
 * Remove 756 ENTER/RET macro invocations (vestigial GTK1-era tracing)
 * Remove all #if 0 dead-code blocks (8 GTK2-era blocks across 5 files)

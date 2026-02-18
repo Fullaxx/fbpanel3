@@ -1,5 +1,8 @@
 #include "misc.h"
 #include "../meter/meter.h"
+
+//#define DEBUGPRN
+#include "dbg.h"
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>

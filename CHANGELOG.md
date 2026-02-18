@@ -1,3 +1,11 @@
+## Version: 8.3.7
+* Fix "Drawing a gadget with negative dimensions (node box owner GtkBar)" warning
+  and subsequent double-free / Abort on window resize: gtk_bar_size_allocate()
+  was not calling the parent GtkBox size_allocate vfunc, so GTK3 never allocated
+  the CSS gadget node for GtkBar.  Fix: call
+  GTK_WIDGET_CLASS(parent_class)->size_allocate() first; remove the now-redundant
+  manual gtk_widget_set_allocation() and gtk_widget_queue_draw() calls.
+
 ## Version: 8.3.6
 * Fix double free / crash on VNC resize: fb_bg_composite() called
   gdk_window_begin_draw_frame() from within the size_allocate chain, corrupting

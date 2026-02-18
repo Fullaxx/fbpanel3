@@ -178,16 +178,21 @@ gtk_bar_size_allocate(GtkWidget *widget, GtkAllocation *allocation)
     gint nvis_children, tmp, rows, cols, dim;
 
     DBG("a.w=%d  a.h=%d\n", allocation->width, allocation->height);
-    bar = GTK_BAR(widget);
-    gtk_widget_set_allocation(widget, allocation);
 
+    /* Call parent first: allocates the CSS gadget node and sets the widget
+     * allocation. Skipping this caused "Drawing a gadget with negative
+     * dimensions (node box owner GtkBar)" + double-free on resize in GTK3. */
+    GTK_WIDGET_CLASS(parent_class)->size_allocate(widget, allocation);
+
+    bar = GTK_BAR(widget);
     nvis_children = 0;
     children = gtk_container_get_children(GTK_CONTAINER(widget));
     for (l = children; l; l = l->next) {
         if (gtk_widget_get_visible(GTK_WIDGET(l->data)))
             nvis_children++;
     }
-    gtk_widget_queue_draw(widget);
+    /* No gtk_widget_queue_draw — GTK3 queues it automatically after
+     * allocation changes; calling it here from size_allocate is illegal. */
     dim = MIN(bar->dimension, nvis_children);
     if (nvis_children == 0) {
         g_list_free(children);

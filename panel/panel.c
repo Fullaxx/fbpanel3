@@ -62,7 +62,6 @@ panel_set_wm_strut(panel *p)
     gulong data[12] = { 0 };
     int i = 4;
 
-    ENTER;
     if (!gtk_widget_get_mapped(p->topgwin))
         return;
     /* most wm's tend to ignore struts of unmapped windows, and that's how
@@ -100,7 +99,7 @@ panel_set_wm_strut(panel *p)
         break;
     default:
         ERR("wrong edge %d. strut won't be set\n", p->edge);
-        RET();
+        return;
     }
     DBG("type %d. width %ld. from %ld to %ld\n", i, data[i], data[4 + i*2],
           data[5 + i*2]);
@@ -112,27 +111,8 @@ panel_set_wm_strut(panel *p)
     XChangeProperty(GDK_DPY, p->topxwin, a_NET_WM_STRUT,
         XA_CARDINAL, 32, PropModeReplace,  (unsigned char *) data, 4);
 
-    RET();
+    return;
 }
-#if 0
-static void
-print_wmdata(panel *p)
-{
-    int i;
-
-    ENTER;
-    RET();
-    DBG("desktop %d/%d\n", p->curdesk, p->desknum);
-    DBG("workarea\n");
-    for (i = 0; i < p->wa_len/4; i++)
-        DBG("(%d, %d) x (%d, %d)\n",
-              p->workarea[4*i + 0],
-              p->workarea[4*i + 1],
-              p->workarea[4*i + 2],
-              p->workarea[4*i + 3]);
-    RET();
-}
-#endif
 
 static GdkFilterReturn
 panel_event_filter(GdkXEvent *xevent, GdkEvent *event, panel *p)
@@ -141,10 +121,9 @@ panel_event_filter(GdkXEvent *xevent, GdkEvent *event, panel *p)
     Window win;
     XEvent *ev = (XEvent *) xevent;
 
-    ENTER;
     DBG("win = 0x%lx\n", ev->xproperty.window);
     if (ev->type != PropertyNotify )
-        RET(GDK_FILTER_CONTINUE);
+        return GDK_FILTER_CONTINUE;
 
     at = ev->xproperty.atom;
     win = ev->xproperty.window;
@@ -182,11 +161,11 @@ panel_event_filter(GdkXEvent *xevent, GdkEvent *event, panel *p)
             DBG("a_NET_DESKTOP_GEOMETRY\n");
             gtk_main_quit();
         } else
-            RET(GDK_FILTER_CONTINUE);
-        RET(GDK_FILTER_REMOVE);
+            return GDK_FILTER_CONTINUE;
+        return GDK_FILTER_REMOVE;
     }
     DBG("non root %lx\n", win);
-    RET(GDK_FILTER_CONTINUE);
+    return GDK_FILTER_CONTINUE;
 }
 
 /****************************************************
@@ -196,16 +175,14 @@ panel_event_filter(GdkXEvent *xevent, GdkEvent *event, panel *p)
 static gint
 panel_destroy_event(GtkWidget * widget, GdkEvent * event, gpointer data)
 {
-    ENTER;
     gtk_main_quit();
     force_quit = 1;
-    RET(FALSE);
+    return FALSE;
 }
 
 static void
 panel_size_req(GtkWidget *widget, GtkRequisition *req, panel *p)
 {
-    ENTER;
     DBG("IN req=(%d, %d)\n", req->width, req->height);
     if (p->widthtype == WIDTH_REQUEST)
         p->width = (p->orientation == GTK_ORIENTATION_HORIZONTAL) ? req->width : req->height;
@@ -215,7 +192,7 @@ panel_size_req(GtkWidget *widget, GtkRequisition *req, panel *p)
     req->width  = p->aw;
     req->height = p->ah;
     DBG("OUT req=(%d, %d)\n", req->width, req->height);
-    RET();
+    return;
 }
 
 
@@ -234,7 +211,6 @@ make_round_corners(panel *p)
     cairo_region_t *region;
     int w, h, r, br;
 
-    ENTER;
     w = p->aw;
     h = p->ah;
     r = p->round_corners_radius;
@@ -244,7 +220,7 @@ make_round_corners(panel *p)
     }
     if (r < 4) {
         DBG("radius too small\n");
-        RET();
+        return;
     }
     br = 2 * r;
 
@@ -275,19 +251,18 @@ make_round_corners(panel *p)
     cairo_region_destroy(region);
     cairo_surface_destroy(surface);
 
-    RET();
+    return;
 }
 
 static gboolean
 panel_configure_event(GtkWidget *widget, GdkEventConfigure *e, panel *p)
 {
-    ENTER;
     DBG("cur geom: %dx%d+%d+%d\n", e->width, e->height, e->x, e->y);
     DBG("req geom: %dx%d+%d+%d\n", p->aw, p->ah, p->ax, p->ay);
     if (e->width == p->cw && e->height == p->ch && e->x == p->cx && e->y ==
             p->cy) {
         DBG("dup. exiting\n");
-        RET(FALSE);
+        return FALSE;
     }
     /* save current geometry */
     p->cw = e->width;
@@ -298,14 +273,14 @@ panel_configure_event(GtkWidget *widget, GdkEventConfigure *e, panel *p)
     /* if panel size is not what we have requested, just wait, it will */
     if (e->width != p->aw || e->height != p->ah) {
         DBG("size_req not yet ready. exiting\n");
-        RET(FALSE);
+        return FALSE;
     }
 
     /* if panel wasn't at requested position, then send another request */
     if (e->x != p->ax || e->y != p->ay) {
         DBG("move %d,%d\n", p->ax, p->ay);
         gtk_window_move(GTK_WINDOW(widget), p->ax, p->ay);
-        RET(FALSE);
+        return FALSE;
     }
 
     /* panel is at right place, lets go on */
@@ -328,7 +303,7 @@ panel_configure_event(GtkWidget *widget, GdkEventConfigure *e, panel *p)
         DBG("set_wm_strut\n");
         panel_set_wm_strut(p);
     }
-    RET(FALSE);
+    return FALSE;
 
 }
 
@@ -364,12 +339,11 @@ static gboolean ah_state_hidden(panel *p);
 static gboolean
 panel_mapped(GtkWidget *widget, GdkEvent *event, panel *p)
 {
-    ENTER;
     if (p->autohide) {
         ah_stop(p);
         ah_start(p);
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 static gboolean
@@ -377,7 +351,6 @@ mouse_watch(panel *p)
 {
     gint x, y;
 
-    ENTER;
     {
         GdkDisplay *_dpy = gdk_display_get_default();
         GdkDevice  *_ptr = gdk_seat_get_pointer(gdk_display_get_default_seat(_dpy));
@@ -418,13 +391,12 @@ mouse_watch(panel *p)
     p->ah_far = ((x < cx) || (x > cx + cw) || (y < cy) || (y > cy + ch));
 
     p->ah_state(p);
-    RET(TRUE);
+    return TRUE;
 }
 
 static gboolean
 ah_state_visible(panel *p)
 {
-    ENTER;
     if (p->ah_state != ah_state_visible) {
         p->ah_state = ah_state_visible;
         gtk_widget_show(p->topgwin);
@@ -432,13 +404,12 @@ ah_state_visible(panel *p)
     } else if (p->ah_far) {
         ah_state_waiting(p);
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 static gboolean
 ah_state_waiting(panel *p)
 {
-    ENTER;
     if (p->ah_state != ah_state_waiting) {
         p->ah_state = ah_state_waiting;
         hpid = g_timeout_add(2 * PERIOD, (GSourceFunc) ah_state_hidden, p);
@@ -447,37 +418,34 @@ ah_state_waiting(panel *p)
         hpid = 0;
         ah_state_visible(p);
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 static gboolean
 ah_state_hidden(panel *p)
 {
-    ENTER;
     if (p->ah_state != ah_state_hidden) {
         p->ah_state = ah_state_hidden;
         gtk_widget_hide(p->topgwin);
     } else if (!p->ah_far) {
         ah_state_visible(p);
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 /* starts autohide behaviour */
 void
 ah_start(panel *p)
 {
-    ENTER;
     mwid = g_timeout_add(PERIOD, (GSourceFunc) mouse_watch, p);
     ah_state_visible(p);
-    RET();
+    return;
 }
 
 /* stops autohide */
 void
 ah_stop(panel *p)
 {
-    ENTER;
     if (mwid) {
         g_source_remove(mwid);
         mwid = 0;
@@ -486,7 +454,7 @@ ah_stop(panel *p)
         g_source_remove(hpid);
         hpid = 0;
     }
-    RET();
+    return;
 }
 
 /****************************************************
@@ -497,7 +465,6 @@ about()
 {
     gchar *authors[] = { "Anatoly Asviyan <aanatoly@users.sf.net>", NULL };
 
-    ENTER;
     gtk_show_about_dialog(NULL,
         "authors", authors,
         "comments", "Lightweight GTK+ desktop panel",
@@ -508,7 +475,7 @@ about()
         "logo-icon-name", "logo",
         "translator-credits", _("translator-credits"),
         NULL);
-    RET();
+    return;
 }
 
 static GtkWidget *
@@ -516,7 +483,6 @@ panel_make_menu(panel *p)
 {
     GtkWidget *mi, *menu;
 
-    ENTER;
     menu = gtk_menu_new();
 
     /* panel's preferences */
@@ -538,20 +504,19 @@ panel_make_menu(panel *p)
         (GCallback)about, p);
     gtk_widget_show (mi);
 
-    RET(menu);
+    return menu;
 }
 
 gboolean
 panel_button_press_event(GtkWidget *widget, GdkEventButton *event, panel *p)
 {
-    ENTER;
     if (event->type == GDK_BUTTON_PRESS && event->button == 3
           && event->state & GDK_CONTROL_MASK) {
         DBG("ctrl-btn3\n");
         gtk_menu_popup_at_pointer(GTK_MENU(p->menu), (GdkEvent *)event);
-        RET(TRUE);
+        return TRUE;
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 static gboolean
@@ -559,7 +524,6 @@ panel_scroll_event(GtkWidget *widget, GdkEventScroll *event, panel *p)
 {
     int i;
 
-    ENTER;
     DBG("scroll direction = %d\n", event->direction);
     i = p->curdesk;
     if (event->direction == GDK_SCROLL_UP || event->direction == GDK_SCROLL_LEFT) {
@@ -572,14 +536,13 @@ panel_scroll_event(GtkWidget *widget, GdkEventScroll *event, panel *p)
             i = 0;
     }
     Xclimsg(GDK_ROOT_WINDOW(), a_NET_CURRENT_DESKTOP, i, 0, 0, 0, 0);
-    RET(TRUE);
+    return TRUE;
 }
 
 
 static void
 panel_start_gui(panel *p)
 {
-    ENTER;
 
     // main toplevel window
     p->topgwin = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -667,13 +630,12 @@ panel_start_gui(panel *p)
           (GdkFilterFunc)panel_event_filter, p);
     //XSync(GDK_DISPLAY(), False);
     gdk_display_flush(gdk_display_get_default());
-    RET();
+    return;
 }
 
 static int
 panel_parse_global(xconf *xc)
 {
-    ENTER;
     /* Set default values */
     p->allign = ALLIGN_CENTER;
     p->edge = EDGE_BOTTOM;
@@ -758,7 +720,7 @@ panel_parse_global(xconf *xc)
     //    XA_CARDINAL, &p->wa_len);
     //print_wmdata(p);
     panel_start_gui(p);
-    RET(1);
+    return 1;
 }
 
 static void
@@ -767,7 +729,6 @@ panel_parse_plugin(xconf *xc)
     plugin_instance *plug = NULL;
     gchar *type = NULL;
 
-    ENTER;
     xconf_get_str(xconf_find(xc, "type", 0), &type);
     if (!type || !(plug = plugin_load(type))) {
         ERR( "fbpanel: can't load %s plugin\n", type);
@@ -789,7 +750,6 @@ panel_parse_plugin(xconf *xc)
 static gboolean
 panel_show_anyway(gpointer data)
 {
-    ENTER;
     gtk_widget_show_all(p->topgwin);
     return FALSE;
 }
@@ -801,7 +761,6 @@ panel_start(xconf *xc)
     int i;
     xconf *pxc;
 
-    ENTER;
     fbev = fb_ev_new();
 
     //xconf_prn(stdout, xc, 0, FALSE);
@@ -809,22 +768,20 @@ panel_start(xconf *xc)
     for (i = 0; (pxc = xconf_find(xc, "plugin", i)); i++)
         panel_parse_plugin(pxc);
     g_timeout_add(200, panel_show_anyway, NULL);
-    RET();
+    return;
 }
 
 static void
 delete_plugin(gpointer data, gpointer udata)
 {
-    ENTER;
     plugin_stop((plugin_instance *)data);
     plugin_put((plugin_instance *)data);
-    RET();
+    return;
 }
 
 static void
 panel_stop(panel *p)
 {
-    ENTER;
 
     if (p->autohide)
         ah_stop(p);
@@ -842,13 +799,12 @@ panel_stop(panel *p)
     gdk_display_flush(gdk_display_get_default());
     XFlush(GDK_DPY);
     XSync(GDK_DPY, True);
-    RET();
+    return;
 }
 
 void
 usage()
 {
-    ENTER;
     printf("fbpanel %s - lightweight GTK2+ panel for UNIX desktops\n", version);
     printf("Command line options:\n");
     printf(" --help      -- print this help and exit\n");
@@ -869,11 +825,10 @@ handle_error(Display * d, XErrorEvent * ev)
 {
     char buf[256];
 
-    ENTER;
     XGetErrorText(GDK_DPY, ev->error_code, buf, 256);
     DBG("fbpanel : X error: %s\n", buf);
 
-    RET();
+    return;
 }
 
 static void

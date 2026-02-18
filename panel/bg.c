@@ -101,7 +101,6 @@ static void
 fb_bg_class_init (FbBgClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
-    ENTER;
     signals [CHANGED] =
         g_signal_new ("changed",
               G_OBJECT_CLASS_TYPE (object_class),
@@ -112,7 +111,7 @@ fb_bg_class_init (FbBgClass *klass)
               G_TYPE_NONE, 0);
     klass->changed = fb_bg_changed;
     object_class->finalize = fb_bg_finalize;
-    RET();
+    return;
 }
 
 static void
@@ -121,7 +120,6 @@ fb_bg_init (FbBg *bg)
     XGCValues  gcv;
     uint mask;
 
-    ENTER;
     bg->dpy = GDK_DPY;
     bg->xroot = DefaultRootWindow(bg->dpy);
     bg->id = XInternAtom(bg->dpy, "_XROOTPMAP_ID", False);
@@ -135,15 +133,14 @@ fb_bg_init (FbBg *bg)
         mask |= GCTile ;
     }
     bg->gc = XCreateGC (bg->dpy, bg->xroot, mask, &gcv) ;
-    RET();
+    return;
 }
 
 
 FbBg *
 fb_bg_new()
 {
-    ENTER;
-    RET(g_object_new (FB_TYPE_BG, NULL));
+    return g_object_new (FB_TYPE_BG, NULL);
 }
 
 static void
@@ -151,19 +148,17 @@ fb_bg_finalize (GObject *object)
 {
     FbBg *bg;
 
-    ENTER;
     bg = FB_BG (object);
     XFreeGC(bg->dpy, bg->gc);
     default_bg = NULL;
 
-    RET();
+    return;
 }
 
 Pixmap
 fb_bg_get_xrootpmap(FbBg *bg)
 {
-    ENTER;
-    RET(bg->pixmap);
+    return bg->pixmap;
 }
 
 static Pixmap
@@ -171,7 +166,6 @@ fb_bg_get_xrootpmap_real(FbBg *bg)
 {
     Pixmap ret = None;
 
-    ENTER;
     if (bg->id)
     {
         int  act_format, c = 2 ;
@@ -195,7 +189,7 @@ fb_bg_get_xrootpmap_real(FbBg *bg)
             }
         } while (--c > 0);
     }
-    RET(ret);
+    return ret;
 
 }
 
@@ -208,19 +202,18 @@ fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y, gint width, gint height)
     Pixmap bgpix;
     GtkWidget *widget;
 
-    ENTER;
     if (bg->pixmap == None)
-        RET(NULL);
+        return NULL;
     gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
     if (!gbgpix) {
         ERR("cairo_image_surface_create failed\n");
-        RET(NULL);
+        return NULL;
     }
     widget = gtk_offscreen_window_new();
     bgpix = gdk_x11_window_get_xid(gtk_widget_get_window(widget));
     XSetTSOrigin(bg->dpy, bg->gc, -x, -y);
     XFillRectangle(bg->dpy, bgpix, bg->gc, 0, 0, width, height);
-    RET(gbgpix);
+    return gbgpix;
 }
 
 cairo_surface_t *
@@ -233,31 +226,30 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
     guint  width, height, border, depth;
     int  x, y;
 
-    ENTER;
     if (bg->pixmap == None)
-        RET(NULL);
+        return NULL;
 
     win = GDK_WINDOW_XID(gtk_widget_get_window(widget));
     if (!XGetGeometry(bg->dpy, win, &dummy, &x, &y, &width, &height, &border,
               &depth)) {
         DBG2("XGetGeometry failed\n");
-        RET(NULL);
+        return NULL;
     }
     if (width <= 1 || height <= 1)
-        RET(NULL);
+        return NULL;
 
     XTranslateCoordinates(bg->dpy, win, bg->xroot, 0, 0, &x, &y, &dummy);
     DBG("win=%lx %dx%d%+d%+d\n", win, width, height, x, y);
     gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
     if (!gbgpix) {
         ERR("cairo_image_surface_create failed\n");
-        RET(NULL);
+        return NULL;
     }
     widget = gtk_offscreen_window_new();
     bgpix = gdk_x11_window_get_xid(gtk_widget_get_window(widget));
     XSetTSOrigin(bg->dpy, bg->gc, -x, -y);
     XFillRectangle(bg->dpy, bgpix, bg->gc, 0, 0, width, height);
-    RET(gbgpix);
+    return gbgpix;
 }
 
 void
@@ -266,21 +258,19 @@ fb_bg_composite(GdkWindow *base, guint32 tintcolor, gint alpha)
     cairo_t *cr;
     GdkDrawingContext *content;
 
-    ENTER;
     content = gdk_window_begin_draw_frame(base, cairo_region_create());
     cr = gdk_drawing_context_get_cairo_context(content);
     gdk_cairo_set_source_rgba(cr, NULL);
     cairo_paint_with_alpha(cr, (double) alpha / 255);
     cairo_destroy(cr);
     fb_bg_changed(fb_bg_get_for_display());
-    RET();
+    return;
 }
 
 
 static void
 fb_bg_changed(FbBg *bg)
 {
-    ENTER;
     bg->pixmap = fb_bg_get_xrootpmap_real(bg);
     if (bg->pixmap != None) {
         XGCValues  gcv;
@@ -289,24 +279,22 @@ fb_bg_changed(FbBg *bg)
         XChangeGC(bg->dpy, bg->gc, GCTile, &gcv);
         DBG("changed\n");
     }
-    RET();
+    return;
 }
 
 
 void fb_bg_notify_changed_bg(FbBg *bg)
 {
-    ENTER;
     g_signal_emit (bg, signals [CHANGED], 0);
-    RET();
+    return;
 }
 
 FbBg *fb_bg_get_for_display(void)
 {
-    ENTER;
     if (!default_bg)
         default_bg = fb_bg_new();
     else
         g_object_ref(default_bg);
-    RET(default_bg);
+    return default_bg;
 }
 

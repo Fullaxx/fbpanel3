@@ -188,7 +188,6 @@ egg_tray_manager_plug_removed (GtkSocket       *socket,
 {
     Window *window;
 
-    ENTER;
     window = g_object_get_data (G_OBJECT (socket), "egg-tray-child-window");
 
     g_hash_table_remove (manager->socket_table, GINT_TO_POINTER (*window));
@@ -198,7 +197,7 @@ egg_tray_manager_plug_removed (GtkSocket       *socket,
     g_signal_emit (manager, manager_signals[TRAY_ICON_REMOVED], 0, socket);
 
     /* This destroys the socket. */
-    RET(FALSE);
+    return FALSE;
 }
 
 /* GTK3: expose_event -> draw; gdk_window_clear_area removed. Stub out. */
@@ -239,7 +238,6 @@ egg_tray_manager_handle_dock_request(EggTrayManager *manager,
     GtkWidget *socket;
     Window *window;
 
-    ENTER;
     socket = gtk_socket_new ();
     gtk_widget_set_app_paintable (socket, TRUE);
     gtk_widget_add_events (socket, GDK_EXPOSURE_MASK);
@@ -284,14 +282,14 @@ egg_tray_manager_handle_dock_request(EggTrayManager *manager,
             GINT_TO_POINTER(xevent->data.l[2]), socket);
         req.width = req.height = 1;
         gtk_widget_get_preferred_size(socket, &req, NULL);
-        RET();
+        return;
     }
 error:    
     DBG("socket has NO window. destroy it\n");
     g_signal_emit(manager, manager_signals[TRAY_ICON_REMOVED], 0,
         socket);
     gtk_widget_destroy(socket);
-    RET();
+    return;
 }
 
 static void
@@ -493,10 +491,6 @@ egg_tray_manager_manage_xscreen (EggTrayManager *manager, Screen *xscreen)
   /* If there's already a manager running on the screen
    * we can't create another one.
    */
-#if 0
-  if (egg_tray_manager_check_running_xscreen (xscreen))
-    return FALSE;
-#endif
   screen = gdk_display_get_default_screen (gdk_x11_lookup_xdisplay (DisplayOfScreen (xscreen)));
   
   invisible = gtk_invisible_new_for_screen (screen);

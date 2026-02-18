@@ -258,10 +258,9 @@ read_line(FILE *fp, line *s)
 {
     gchar *tmp, *tmp2;
 
-    ENTER;
     s->type = LINE_NONE;
     if (!fp)
-        RET(s->type);
+        return s->type;
     while (fgets(s->str, LINE_LENGTH, fp)) {
         g_strstrip(s->str);
 
@@ -290,7 +289,7 @@ read_line(FILE *fp, line *s)
         }
         break;
     }
-    RET(s->type);
+    return s->type;
 
 }
 

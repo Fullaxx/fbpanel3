@@ -35,11 +35,10 @@ toggle_shaded(wincmd_priv *wc, guint32 action)
     guint32 tmp2, dno;
     net_wm_window_type nwwt;
     
-    ENTER;
     win = get_xaproperty (GDK_ROOT_WINDOW(), a_NET_CLIENT_LIST,
         XA_WINDOW, &num);
     if (!win)
-	RET();
+	return;
     if (!num)
         goto end;
     //tmp = get_xaproperty (GDK_ROOT_WINDOW(), a_NET_CURRENT_DESKTOP,
@@ -71,7 +70,7 @@ toggle_shaded(wincmd_priv *wc, guint32 action)
     
  end:
     XFree(win);
-    RET();
+    return;
 }
 
 /* if all windows are iconified then open all, 
@@ -85,11 +84,10 @@ toggle_iconify(wincmd_priv *wc)
     net_wm_window_type nwwt;
     net_wm_state nws;
 
-    ENTER;
     win = get_xaproperty (GDK_ROOT_WINDOW(), a_NET_CLIENT_LIST_STACKING,
             XA_WINDOW, &num);
     if (!win)
-	RET();
+	return;
     if (!num)
         goto end;
     awin = g_new(Window, num);
@@ -121,7 +119,7 @@ toggle_iconify(wincmd_priv *wc)
     g_free(awin);
  end:
     XFree(win);
-    RET();
+    return;
 }
 
 static gint
@@ -129,9 +127,8 @@ clicked (GtkWidget *widget, GdkEventButton *event, gpointer data)
 {
     wincmd_priv *wc = (wincmd_priv *) data;
 
-    ENTER;
     if (event->type != GDK_BUTTON_PRESS)
-        RET(FALSE);
+        return FALSE;
 
     if (event->button == 1) {
         toggle_iconify(wc);
@@ -143,14 +140,13 @@ clicked (GtkWidget *widget, GdkEventButton *event, gpointer data)
         DBG("wincmd: unsupported command\n");
     }
    
-    RET(FALSE);
+    return FALSE;
 }
 
 static void
 wincmd_destructor(plugin_instance *p)
 {
-    ENTER;
-    RET();
+    return;
 }
 
 static int
@@ -161,7 +157,6 @@ wincmd_constructor(plugin_instance *p)
     GtkWidget *button;
     int w, h;
 
-    ENTER;
     wc = (wincmd_priv *) p;
     tooltip = fname = iname = NULL;
     wc->button1 = WC_ICONIFY;
@@ -195,7 +190,7 @@ wincmd_constructor(plugin_instance *p)
     if (tooltip) 
         gtk_widget_set_tooltip_markup(button, tooltip);
 
-    RET(1);
+    return 1;
 }
 
 

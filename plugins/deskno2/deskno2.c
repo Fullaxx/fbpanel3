@@ -8,8 +8,6 @@
 #include "misc.h"
 #include "plugin.h"
 
-//#define DEBUGPRN
-#include "dbg.h"
 
 typedef struct {
     plugin_instance plugin;
@@ -31,11 +29,10 @@ clicked(GtkWidget *widget, deskno_priv *dc)
 static  void
 update_dno(GtkWidget *widget, deskno_priv *dc)
 {
-    ENTER;
     dc->dno = fb_ev_current_desktop(fbev);
     gtk_button_set_label(GTK_BUTTON(dc->main), dc->lnames[dc->dno]);
     
-    RET();
+    return;
 }
 
 static  void
@@ -43,7 +40,6 @@ update_all(GtkWidget *widget, deskno_priv *dc)
 {
     int i;
     
-    ENTER;
     dc->dnum = fb_ev_number_of_desktops(fbev);
     if (dc->dnames)
         g_strfreev (dc->dnames);
@@ -58,7 +54,7 @@ update_all(GtkWidget *widget, deskno_priv *dc)
         dc->lnames[i] = g_strdup_printf("%d", i + 1);
     }
     update_dno(widget, dc);
-    RET();
+    return;
 }
 
 
@@ -67,14 +63,13 @@ scroll (GtkWidget *widget, GdkEventScroll *event, deskno_priv *dc)
 {
     int dno;
     
-    ENTER;
     dno = dc->dno + ((event->direction == GDK_SCROLL_UP) ? (-1) : (+1));
     if (dno < 0)
         dno = dc->dnum - 1;
     else if (dno == dc->dnum)
         dno = 0;
     Xclimsg(GDK_ROOT_WINDOW(), a_NET_CURRENT_DESKTOP, dno, 0, 0, 0, 0);
-    RET(TRUE);
+    return TRUE;
 
 }
 
@@ -82,7 +77,6 @@ static int
 deskno_constructor(plugin_instance *p)
 {
     deskno_priv *dc;
-    ENTER;
     dc = (deskno_priv *) p;
     dc->main = gtk_button_new_with_label("w");
     gtk_button_set_relief(GTK_BUTTON(dc->main),GTK_RELIEF_NONE);
@@ -100,7 +94,7 @@ deskno_constructor(plugin_instance *p)
     g_signal_connect (G_OBJECT (fbev), "desktop_names", G_CALLBACK (update_all), (gpointer) dc);
     g_signal_connect (G_OBJECT (fbev), "number_of_desktops", G_CALLBACK (update_all), (gpointer) dc);
     
-    RET(1);
+    return 1;
 }
 
 
@@ -109,7 +103,6 @@ deskno_destructor(plugin_instance *p)
 {
     deskno_priv *dc = (deskno_priv *) p;
     
-    ENTER;
     /* disconnect ALL handlers matching func and data */
     g_signal_handlers_disconnect_by_func(G_OBJECT(fbev), update_dno, dc);
     g_signal_handlers_disconnect_by_func(G_OBJECT(fbev), update_all, dc);
@@ -117,7 +110,7 @@ deskno_destructor(plugin_instance *p)
         g_strfreev(dc->dnames);
     if (dc->lnames)
         g_strfreev(dc->lnames);
-    RET();
+    return;
 }
 
 static plugin_class class = {

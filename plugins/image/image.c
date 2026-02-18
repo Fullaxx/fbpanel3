@@ -6,8 +6,6 @@
 #include "misc.h"
 #include "plugin.h"
 
-//#define DEBUGPRN
-#include "dbg.h"
 
 
 typedef struct {
@@ -24,11 +22,10 @@ image_destructor(plugin_instance *p)
 {
     image_priv *img = (image_priv *) p;
 
-    ENTER;
     gtk_widget_destroy(img->mainw);
     if (img->pix)
         cairo_surface_destroy(img->pix);
-    RET();
+    return;
 }
 
 static int
@@ -40,7 +37,6 @@ image_constructor(plugin_instance *p)
     GtkWidget *wid;
     GError *err = NULL;
     
-    ENTER;
     img = (image_priv *) p;
     tooltip = fname = 0;
     XCG(p->xc, "image", &fname, str);
@@ -76,7 +72,7 @@ image_constructor(plugin_instance *p)
         gtk_widget_set_tooltip_markup(img->mainw, tooltip);
         g_free(tooltip);
     }
-    RET(1);
+    return 1;
 }
 
 

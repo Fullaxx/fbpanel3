@@ -26,7 +26,6 @@ static GHashTable *class_ht;
 void
 class_register(plugin_class *p)
 {
-    ENTER;
     if (!class_ht) {
         class_ht = g_hash_table_new(g_str_hash, g_str_equal);
         DBG("creating class hash table\n");
@@ -38,13 +37,12 @@ class_register(plugin_class *p)
     }
     p->dynamic = (the_panel != NULL); /* dynamic modules register after main */
     g_hash_table_insert(class_ht, p->type, p);
-    RET();
+    return;
 }
 
 void
 class_unregister(plugin_class *p)
 {
-    ENTER;
     DBG("unregistering %s\n", p->type);
     if (!g_hash_table_remove(class_ht, p->type)) {
         ERR("Can't unregister plugin %s. No such name\n", p->type);
@@ -54,7 +52,7 @@ class_unregister(plugin_class *p)
         g_hash_table_destroy(class_ht);
         class_ht = NULL;
     }
-    RET();
+    return;
 }
 
 void
@@ -64,13 +62,12 @@ class_put(char *name)
     gchar *s;
     plugin_class *tmp;
 
-    ENTER;
     DBG("%s\n", name);
     if (!(class_ht && (tmp = g_hash_table_lookup(class_ht, name))))
-        RET();
+        return;
     tmp->count--;
     if (tmp->count || !tmp->dynamic)
-        RET();
+        return;
 
     s = g_strdup_printf(LIBDIR "/lib%s.so", name);
     DBG("loading module %s\n", s);
@@ -81,7 +78,7 @@ class_put(char *name)
         g_module_close(m);
         g_module_close(m);
     }
-    RET();
+    return;
 }
 
 gpointer
@@ -91,12 +88,11 @@ class_get(char *name)
     plugin_class *tmp;
     gchar *s;
 
-    ENTER;
     DBG("%s\n", name);
     if (class_ht && (tmp = g_hash_table_lookup(class_ht, name))) {
         DBG("found\n");
         tmp->count++;
-        RET(tmp);
+        return tmp;
     }
     s = g_strdup_printf(LIBDIR "/lib%s.so", name);
     DBG("loading module %s\n", s);
@@ -106,11 +102,11 @@ class_get(char *name)
         if (class_ht && (tmp = g_hash_table_lookup(class_ht, name))) {
             DBG("found\n");
             tmp->count++;
-            RET(tmp);
+            return tmp;
         }
     }
     ERR("%s\n", g_module_error());
-    RET(NULL);
+    return NULL;
 }
 
 
@@ -123,16 +119,15 @@ plugin_load(char *type)
     plugin_class *pc = NULL;
     plugin_instance  *pp = NULL;
 
-    ENTER;
     /* nothing was found */
     if (!(pc = class_get(type)))
-        RET(NULL);
+        return NULL;
 
     DBG("%s priv_size=%d\n", pc->type, pc->priv_size);
     pp = g_malloc0(pc->priv_size);
     g_return_val_if_fail (pp != NULL, NULL);
     pp->class = pc;
-    RET(pp);
+    return pp;
 }
 
 
@@ -141,11 +136,10 @@ plugin_put(plugin_instance *this)
 {
     gchar *type;
 
-    ENTER;
     type = this->class->type;
     g_free(this);
     class_put(type);
-    RET();
+    return;
 }
 
 gboolean panel_button_press_event(GtkWidget *widget, GdkEventButton *event,
@@ -154,7 +148,6 @@ gboolean panel_button_press_event(GtkWidget *widget, GdkEventButton *event,
 int
 plugin_start(plugin_instance *this)
 {
-    ENTER;
 
     DBG("%s\n", this->class->type);
     if (!this->class->invisible) {
@@ -188,21 +181,20 @@ plugin_start(plugin_instance *this)
     if (!this->class->constructor(this)) {
         DBG("here\n");
         gtk_widget_destroy(this->pwid);
-        RET(0);
+        return 0;
     }
-    RET(1);
+    return 1;
 }
 
 
 void
 plugin_stop(plugin_instance *this)
 {
-    ENTER;
     DBG("%s\n", this->class->type);
     this->class->destructor(this);
     this->panel->plug_num--;
     gtk_widget_destroy(this->pwid);
-    RET();
+    return;
 }
 
 
@@ -212,7 +204,6 @@ default_plugin_edit_config(plugin_instance *pl)
     GtkWidget *vbox, *label;
     gchar *msg;
 
-    ENTER;
     vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     /* XXX: harcoded default profile name */
     msg = g_strdup_printf("Graphical '%s' plugin configuration\n is not "
@@ -229,5 +220,5 @@ default_plugin_edit_config(plugin_instance *pl)
     gtk_container_set_border_width(GTK_CONTAINER(vbox), 14);
     g_free(msg);
 
-    RET(vbox);
+    return vbox;
 }

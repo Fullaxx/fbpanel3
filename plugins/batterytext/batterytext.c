@@ -22,7 +22,6 @@
 #include "plugin.h"
 
 //#define DEBUG
-#include "dbg.h"
 
 typedef struct {
     plugin_instance plugin;
@@ -66,7 +65,6 @@ text_update(batterytext_priv *gm)
     float charge_ratio = 0;
     int charge_time = 0;
 
-    ENTER;
     energy_full_design = read_bat_value(gm->battery, "energy_full_design");
     energy_full = read_bat_value(gm->battery, "energy_full");
     energy_now = read_bat_value(gm->battery, "energy_now");
@@ -111,7 +109,7 @@ text_update(batterytext_priv *gm)
         gtk_label_set_markup (GTK_LABEL(gm->main), "N/A");
         gtk_widget_set_tooltip_markup (gm->main, "N/A");
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 static void
@@ -119,11 +117,10 @@ batterytext_destructor(plugin_instance *p)
 {
     batterytext_priv *gm = (batterytext_priv *) p;
 
-    ENTER;
     if (gm->timer) {
         g_source_remove(gm->timer);
     }
-    RET();
+    return;
 }
 
 static int
@@ -131,7 +128,6 @@ batterytext_constructor(plugin_instance *p)
 {
     batterytext_priv *gm;
 
-    ENTER;
     gm = (batterytext_priv *) p;
     gm->design = False;
     gm->time = 500;
@@ -151,7 +147,7 @@ batterytext_constructor(plugin_instance *p)
     gm->timer = g_timeout_add((guint) gm->time,
         (GSourceFunc) text_update, (gpointer) gm);
 
-    RET(1);
+    return 1;
 }
 
 

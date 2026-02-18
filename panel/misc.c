@@ -20,8 +20,6 @@
 //#define DEBUGPRN
 #include "dbg.h"
 
-extern panel *the_panel;
-
 GtkIconTheme *icon_theme;
 
 /* X11 data types */
@@ -115,23 +113,21 @@ xconf_enum layer_enum[] = {
 int
 str2num(xconf_enum *p, gchar *str, int defval)
 {
-    ENTER;
     for (;p && p->str; p++) {
         if (!g_ascii_strcasecmp(str, p->str))
-            RET(p->num);
+            return p->num;
     }
-    RET(defval);
+    return defval;
 }
 
 gchar *
 num2str(xconf_enum *p, int num, gchar *defval)
 {
-    ENTER;
     for (;p && p->str; p++) {
         if (num == p->num)
-            RET(p->str);
+            return p->str;
     }
-    RET(defval);
+    return defval;
 }
 
 
@@ -139,7 +135,6 @@ void resolve_atoms()
 {
     Display *dpy;
 
-    ENTER;
     dpy = GDK_DPY;
 
     a_UTF8_STRING                = XInternAtom(dpy, "UTF8_STRING", False);
@@ -184,7 +179,7 @@ void resolve_atoms()
     a_KDE_NET_WM_SYSTEM_TRAY_WINDOW_FOR
                                  = XInternAtom(dpy, "_KDE_NET_WM_SYSTEM_TRAY_WINDOW_FOR", False);
 
-    RET();
+    return;
 }
 
 
@@ -318,18 +313,17 @@ get_xaproperty (Window win, Atom prop, Atom type, int *nitems)
     unsigned long after_ret;
     unsigned char *prop_data;
 
-    ENTER;
     prop_data = NULL;
     if (XGetWindowProperty (GDK_DPY, win, prop, 0, 0x7fffffff, False,
               type, &type_ret, &format_ret, &items_ret,
               &after_ret, &prop_data) != Success)
-        RET(NULL);
+        return NULL;
     DBG("win=%x prop=%d type=%d rtype=%d rformat=%d nitems=%d\n", win, prop,
             type, type_ret, format_ret, items_ret);
 
     if (nitems)
         *nitems = items_ret;
-    RET(prop_data);
+    return prop_data;
 }
 
 static char*
@@ -339,7 +333,6 @@ text_property_to_utf8 (const XTextProperty *prop)
   int count;
   char *retval;
 
-  ENTER;
   list = NULL;
   count = gdk_text_property_to_utf8_list_for_display (gdk_display_get_default(),
                                           gdk_x11_xatom_to_atom (prop->encoding),
@@ -357,7 +350,7 @@ text_property_to_utf8 (const XTextProperty *prop)
 
   g_strfreev (list);
 
-  RET(retval);
+  return retval;
 }
 
 char *
@@ -366,7 +359,6 @@ get_textproperty(Window win, Atom atom)
     XTextProperty text_prop;
     char *retval;
 
-    ENTER;
     if (XGetTextProperty(GDK_DPY, win, &text_prop, atom)) {
         DBG("format=%d enc=%d nitems=%d value=%s   \n",
               text_prop.format,
@@ -376,10 +368,10 @@ get_textproperty(Window win, Atom atom)
         retval = text_property_to_utf8 (&text_prop);
         if (text_prop.nitems > 0)
             XFree (text_prop.value);
-        RET(retval);
+        return retval;
 
     }
-    RET(NULL);
+    return NULL;
 }
 
 
@@ -389,15 +381,14 @@ get_net_number_of_desktops()
     guint desknum;
     guint32 *data;
 
-    ENTER;
     data = get_xaproperty (GDK_ROOT_WINDOW(), a_NET_NUMBER_OF_DESKTOPS,
           XA_CARDINAL, 0);
     if (!data)
-        RET(0);
+        return 0;
 
     desknum = *data;
     XFree (data);
-    RET(desknum);
+    return desknum;
 }
 
 
@@ -407,14 +398,13 @@ get_net_current_desktop ()
     guint desk;
     guint32 *data;
 
-    ENTER;
     data = get_xaproperty (GDK_ROOT_WINDOW(), a_NET_CURRENT_DESKTOP, XA_CARDINAL, 0);
     if (!data)
-        RET(0);
+        return 0;
 
     desk = *data;
     XFree (data);
-    RET(desk);
+    return desk;
 }
 
 guint
@@ -423,14 +413,13 @@ get_net_wm_desktop(Window win)
     guint desk = 0;
     guint *data;
 
-    ENTER;
     data = get_xaproperty (win, a_NET_WM_DESKTOP, XA_CARDINAL, 0);
     if (data) {
         desk = *data;
         XFree (data);
     } else
         DBG("can't get desktop num for win 0x%lx", win);
-    RET(desk);
+    return desk;
 }
 
 void
@@ -440,10 +429,9 @@ get_net_wm_state(Window win, net_wm_state *nws)
     int num3;
 
 
-    ENTER;
     bzero(nws, sizeof(*nws));
     if (!(state = get_xaproperty(win, a_NET_WM_STATE, XA_ATOM, &num3)))
-        RET();
+        return;
 
     DBG( "%x: netwm state = { ", (unsigned int)win);
     while (--num3 >= 0) {
@@ -468,7 +456,7 @@ get_net_wm_state(Window win, net_wm_state *nws)
     }
     XFree(state);
     DBGE( "}\n");
-    RET();
+    return;
 }
 
 
@@ -481,10 +469,9 @@ get_net_wm_window_type(Window win, net_wm_window_type *nwwt)
     int num3;
 
 
-    ENTER;
     bzero(nwwt, sizeof(*nwwt));
     if (!(state = get_xaproperty(win, a_NET_WM_WINDOW_TYPE, XA_ATOM, &num3)))
-        RET();
+        return;
 
     DBG( "%x: netwm state = { ", (unsigned int)win);
     while (--num3 >= 0) {
@@ -518,7 +505,7 @@ get_net_wm_window_type(Window win, net_wm_window_type *nwwt)
     }
     XFree(state);
     DBG( "}\n");
-    RET();
+    return;
 }
 
 
@@ -528,7 +515,6 @@ static void
 calculate_width(int scrw, int wtype, int allign, int xmargin,
       int *panw, int *x)
 {
-    ENTER;
     DBG("scrw=%d\n", scrw);
     DBG("IN panw=%d\n", *panw);
     //scrw -= 2;
@@ -564,7 +550,7 @@ calculate_width(int scrw, int wtype, int allign, int xmargin,
             *x = 0;
     } else if (allign == ALLIGN_CENTER)
         *x += (scrw - *panw) / 2;
-    RET();
+    return;
 }
 
 
@@ -574,7 +560,6 @@ calculate_position(panel *np)
     int positionSet = 0;
     int sswidth, ssheight, minx, miny;
 
-    ENTER;
 
     /* If a Xinerama head was specified on the command line, then
      * calculate the location based on that.  Otherwise, just use the
@@ -649,7 +634,7 @@ calculate_position(panel *np)
     }
     */
     DBG("x=%d y=%d w=%d h=%d\n", np->ax, np->ay, np->aw, np->ah);
-    RET();
+    return;
 }
 
 
@@ -657,9 +642,8 @@ calculate_position(panel *np)
 gchar *
 expand_tilda(gchar *file)
 {
-    ENTER;
     if (!file)
-        RET(NULL);
+        return NULL;
     RET((file[0] == '~') ?
         g_strdup_printf("%s%s", getenv("HOME"), file+1)
         : g_strdup(file));
@@ -674,7 +658,6 @@ get_button_spacing(GtkRequisition *req, GtkContainer *parent, gchar *name)
     //gint focus_width;
     //gint focus_pad;
 
-    ENTER;
     b = gtk_button_new();
     gtk_widget_set_name(GTK_WIDGET(b), name);
     gtk_widget_set_can_focus(b, FALSE);
@@ -688,7 +671,7 @@ get_button_spacing(GtkRequisition *req, GtkContainer *parent, gchar *name)
     gtk_widget_get_preferred_size(b, req, NULL);
 
     gtk_widget_destroy(b);
-    RET();
+    return;
 }
 
 
@@ -697,14 +680,13 @@ gcolor2rgb24(GdkRGBA *color)
 {
     guint32 i;
 
-    ENTER;
     i  = ((guint32)(color->red   * 255)) & 0xFF;
     i <<= 8;
     i |= ((guint32)(color->green * 255)) & 0xFF;
     i <<= 8;
     i |= ((guint32)(color->blue  * 255)) & 0xFF;
     DBG("i=%x\n", i);
-    RET(i);
+    return i;
 }
 
 gchar *
@@ -715,74 +697,6 @@ gdk_color_to_RRGGBB(GdkRGBA *color)
         (int)(color->red * 255), (int)(color->green * 255), (int)(color->blue * 255));
     return str;
 }
-
-void
-menu_pos(GtkMenu *menu, gint *x, gint *y, gboolean *push_in, GtkWidget *widget)
-{
-    GdkRectangle menuRect;
-    GdkRectangle validRect = the_panel->screenRect;
-
-    ENTER;
-
-    /* "validRect" is a rectangle of the valid location to place the menu. */
-    if(the_panel->orientation == GTK_ORIENTATION_HORIZONTAL) {
-      validRect.height -= the_panel->ah;
-      if(the_panel->edge == EDGE_TOP) {
-        validRect.y += the_panel->ah;
-      }
-    } else {
-      validRect.width -= the_panel->aw;
-      if(the_panel->edge == EDGE_LEFT) {
-        validRect.x += the_panel->aw;
-      }
-    }
-
-    /* Calculate a requested location based on the widget/mouse location,
-     * relative to the root window. */
-    if (widget) {
-        GtkAllocation alloc;
-        gdk_window_get_origin(gtk_widget_get_window(widget), &menuRect.x, &menuRect.y);
-        gtk_widget_get_allocation(widget, &alloc);
-        menuRect.x += alloc.x;
-        menuRect.y += alloc.y;
-    } else {
-        GdkSeat *seat = gdk_display_get_default_seat(gdk_display_get_default());
-        GdkDevice *pointer = gdk_seat_get_pointer(seat);
-        gdk_device_get_position(pointer, NULL, &menuRect.x, &menuRect.y);
-        menuRect.x -= 20;
-        menuRect.y -= 20;
-    }
-
-    {
-        GtkRequisition min_req, nat_req;
-        gtk_widget_get_preferred_size(GTK_WIDGET(menu), &min_req, &nat_req);
-        menuRect.width = nat_req.width;
-        menuRect.height = nat_req.height;
-    }
-
-    /* If "menuRect" does not fall within "validRect", then move "menuRect"
-     * to fit. */
-    if(menuRect.x + menuRect.width > validRect.x + validRect.width) {
-      menuRect.x = validRect.x + validRect.width - menuRect.width;
-    }
-    if(menuRect.x < validRect.x) {
-      menuRect.x = validRect.x;
-    }
-    if(menuRect.y + menuRect.height > validRect.y + validRect.height) {
-      menuRect.y = validRect.y + validRect.height - menuRect.height;
-    }
-    if(menuRect.y < validRect.y) {
-      menuRect.y = validRect.y;
-    }
-
-    *x = menuRect.x;
-    *y = menuRect.y;
-
-    DBG("w-h %d %d\n", menuRect.width, menuRect.height);
-    *push_in = TRUE;
-    RET();
-}
-
 
 gchar *
 indent(int level)
@@ -797,7 +711,7 @@ indent(int level)
 
     if (level > sizeof(space))
         level = sizeof(space);
-    RET(space[level]);
+    return space[level];
 }
 
 
@@ -824,7 +738,6 @@ fb_pixbuf_new(gchar *iname, gchar *fname, int width, int height,
     GdkPixbuf *pb = NULL;
     int size;
 
-    ENTER;
     size = MIN(192, MAX(width, height));
     if (iname && !pb)
         pb = gtk_icon_theme_load_icon(icon_theme, iname, size,
@@ -834,7 +747,7 @@ fb_pixbuf_new(gchar *iname, gchar *fname, int width, int height,
     if (use_fallback && !pb)
         pb = gtk_icon_theme_load_icon(icon_theme, "gtk-missing-image", size,
             GTK_ICON_LOOKUP_FORCE_SIZE, NULL);
-    RET(pb);
+    return pb;
 }
 
 /* Creates hilighted version of front image to reflect mouse enter
@@ -846,15 +759,14 @@ fb_pixbuf_make_back_image(GdkPixbuf *front, gulong hicolor)
     guchar *src, *up, extra[3];
     int i;
 
-    ENTER;
     if(!front)
     {
-        RET(front);
+        return front;
     }
     back = gdk_pixbuf_add_alpha(front, FALSE, 0, 0, 0);
     if (!back) {
         g_object_ref(G_OBJECT(front));
-        RET(front);
+        return front;
     }
     src = gdk_pixbuf_get_pixels (back);
     for (i = 2; i >= 0; i--, hicolor >>= 8)
@@ -870,7 +782,7 @@ fb_pixbuf_make_back_image(GdkPixbuf *front, gulong hicolor)
                 src[i] += extra[i];
         }
     }
-    RET(back);
+    return back;
 }
 
 #define PRESS_GAP 2
@@ -880,10 +792,9 @@ fb_pixbuf_make_press_image(GdkPixbuf *front)
     GdkPixbuf *press, *tmp;
     int w, h;
 
-    ENTER;
     if(!front)
     {
-        RET(front);
+        return front;
     }
     w = gdk_pixbuf_get_width(front) - 2 * PRESS_GAP;
     h = gdk_pixbuf_get_height(front) - 2 * PRESS_GAP;
@@ -897,7 +808,7 @@ fb_pixbuf_make_press_image(GdkPixbuf *front)
                 press, // dest_pixbuf
                 PRESS_GAP, PRESS_GAP);  // dst_x, dst_y
         g_object_unref(G_OBJECT(tmp));
-        RET(press);
+        return press;
     }
     if (press)
         g_object_unref(G_OBJECT(press));
@@ -905,7 +816,7 @@ fb_pixbuf_make_press_image(GdkPixbuf *front)
         g_object_unref(G_OBJECT(tmp));
 
     g_object_ref(G_OBJECT(front));
-    RET(front);
+    return front;
 }
 
 /**********************************************************************
@@ -950,7 +861,7 @@ fb_image_new(gchar *iname, gchar *fname, int width, int height)
     conf->pix[0] = fb_pixbuf_new(iname, fname, width, height, TRUE);
     gtk_image_set_from_pixbuf(GTK_IMAGE(image), conf->pix[0]);
     gtk_widget_show(image);
-    RET(image);
+    return image;
 }
 
 
@@ -962,7 +873,6 @@ fb_image_free(GObject *image)
     fb_image_conf_t *conf;
     int i;
 
-    ENTER;
     conf = g_object_get_data(image, "conf");
     g_signal_handler_disconnect(G_OBJECT(icon_theme), conf->itc_id);
     g_free(conf->iname);
@@ -971,7 +881,7 @@ fb_image_free(GObject *image)
         if (conf->pix[i])
             g_object_unref(G_OBJECT(conf->pix[i]));
     g_free(conf);
-    RET();
+    return;
 }
 
 /* Reloads image's pixbuf upon icon theme change
@@ -982,7 +892,6 @@ fb_image_icon_theme_changed(GtkIconTheme *icon_theme, GtkWidget *image)
     fb_image_conf_t *conf;
     int i;
 
-    ENTER;
     conf = g_object_get_data(G_OBJECT(image), "conf");
     DBG("%s / %s\n", conf->iname, conf->fname);
     for (i = 0; i < PIXBBUF_NUM; i++)
@@ -995,7 +904,7 @@ fb_image_icon_theme_changed(GtkIconTheme *icon_theme, GtkWidget *image)
     conf->pix[1] = fb_pixbuf_make_back_image(conf->pix[0], conf->hicolor);
     conf->pix[2] = fb_pixbuf_make_press_image(conf->pix[1]);
     gtk_image_set_from_pixbuf(GTK_IMAGE(image), conf->pix[0]);
-    RET();
+    return;
 }
 
 
@@ -1019,7 +928,6 @@ fb_button_new(gchar *iname, gchar *fname, int width, int height,
     GtkWidget *b, *image;
     fb_image_conf_t *conf;
 
-    ENTER;
     b = gtk_bgbox_new();
     gtk_container_set_border_width(GTK_CONTAINER(b), 0);
     gtk_widget_set_can_focus(b, FALSE);
@@ -1041,7 +949,7 @@ fb_button_new(gchar *iname, gchar *fname, int width, int height,
           G_CALLBACK (fb_button_pressed), image);
     gtk_container_add(GTK_CONTAINER(b), image);
     gtk_widget_show_all(b);
-    RET(b);
+    return b;
 }
 
 
@@ -1054,7 +962,6 @@ fb_button_cross(GtkImage *widget, GdkEventCrossing *event)
     fb_image_conf_t *conf;
     int i;
 
-    ENTER;
     conf = g_object_get_data(G_OBJECT(widget), "conf");
     if (event->type == GDK_LEAVE_NOTIFY) {
         i = 0;
@@ -1068,7 +975,7 @@ fb_button_cross(GtkImage *widget, GdkEventCrossing *event)
     DBG("%s/%s - %s - pix[%d]=%p\n", conf->iname, conf->fname,
 	(event->type == GDK_LEAVE_NOTIFY) ? "out" : "in",
 	conf->i, conf->pix[conf->i]);
-    RET(TRUE);
+    return TRUE;
 }
 
 static gboolean
@@ -1077,7 +984,6 @@ fb_button_pressed(GtkWidget *widget, GdkEventButton *event)
     fb_image_conf_t *conf;
     int i;
 
-    ENTER;
     conf = g_object_get_data(G_OBJECT(widget), "conf");
     if (event->type == GDK_BUTTON_PRESS) {
         i = 2;
@@ -1094,7 +1000,7 @@ fb_button_pressed(GtkWidget *widget, GdkEventButton *event)
         conf->i = i;
         gtk_image_set_from_pixbuf(GTK_IMAGE(widget), conf->pix[i]);
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 

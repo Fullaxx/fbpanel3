@@ -98,7 +98,6 @@ cpu_get_load(cpu_priv *c)
     float total[1];
     gchar buf[40];
 
-    ENTER;
     memset(&cpu, 0, sizeof(cpu));
     memset(&cpu_diff, 0, sizeof(cpu_diff));
     memset(&total, 0, sizeof(total));
@@ -122,7 +121,7 @@ end:
     g_snprintf(buf, sizeof(buf), "<b>Cpu:</b> %d%%", (int)(total[0] * 100));
     gtk_widget_set_tooltip_markup(((plugin_instance *)c)->pwid, buf);
     k->add_tick(&c->chart, total);
-    RET(TRUE);
+    return TRUE;
 
 }
 
@@ -132,9 +131,9 @@ cpu_constructor(plugin_instance *p)
     cpu_priv *c;
 
     if (!(k = class_get("chart")))
-        RET(0);
+        return 0;
     if (!PLUGIN_CLASS(k)->constructor(p))
-        RET(0);
+        return 0;
     c = (cpu_priv *) p;
     c->colors[0] = "green";
     XCG(p->xc, "Color", &c->colors[0], str);
@@ -143,7 +142,7 @@ cpu_constructor(plugin_instance *p)
     gtk_widget_set_tooltip_markup(((plugin_instance *)c)->pwid, "<b>Cpu</b>");
     cpu_get_load(c);
     c->timer = g_timeout_add(1000, (GSourceFunc) cpu_get_load, (gpointer) c);
-    RET(1);
+    return 1;
 }
 
 
@@ -152,11 +151,10 @@ cpu_destructor(plugin_instance *p)
 {
     cpu_priv *c = (cpu_priv *) p;
 
-    ENTER;
     g_source_remove(c->timer);
     PLUGIN_CLASS(k)->destructor(p);
     class_put("chart");
-    RET();
+    return;
 }
 
 

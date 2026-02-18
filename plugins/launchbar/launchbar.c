@@ -67,17 +67,16 @@ typedef struct launchbar_priv {
 static gboolean
 my_button_pressed(GtkWidget *widget, GdkEventButton *event, btn *b )
 {
-    ENTER;
     if (event->type == GDK_BUTTON_PRESS && event->button == 3
         && event->state & GDK_CONTROL_MASK)
     {
         b->lb->discard_release_event = 1;
-        RET(FALSE);
+        return FALSE;
     }
     if (event->type == GDK_BUTTON_RELEASE && b->lb->discard_release_event)
     {
         b->lb->discard_release_event = 0;
-        RET(TRUE);
+        return TRUE;
     }
     g_assert(b != NULL);
     if (event->type == GDK_BUTTON_RELEASE)
@@ -90,7 +89,7 @@ my_button_pressed(GtkWidget *widget, GdkEventButton *event, btn *b )
             run_app(b->action);
         }
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 static void
@@ -99,12 +98,11 @@ launchbar_destructor(plugin_instance *p)
     launchbar_priv *lb = (launchbar_priv *) p;
     int i;
 
-    ENTER;
     gtk_widget_destroy(lb->box);
     for (i = 0; i < lb->btn_num; i++) 
         g_free(lb->btns[i].action);     
 
-    RET();
+    return;
 }
 
 
@@ -120,9 +118,8 @@ drag_data_received_cb (GtkWidget *widget,
 {
     gchar *s, *str, *tmp, *tok, *tok2;
 
-    ENTER;
     if (gtk_selection_data_get_length(sd) <= 0)
-        RET();
+        return;
     DBG("uri drag received: info=%d/%s len=%d data=%s\n",
          info, target_table[info].target, gtk_selection_data_get_length(sd),
          gtk_selection_data_get_data(sd));
@@ -158,7 +155,7 @@ drag_data_received_cb (GtkWidget *widget,
             ERR("Invalid UTF16 from text/x-moz-url target");
             g_free(utf8);
             gtk_drag_finish(context, FALSE, FALSE, time);
-            RET();
+            return;
 	}
 	*tmp = '\0';
         tmp = g_strdup_printf("%s %s", b->action, utf8);
@@ -167,7 +164,7 @@ drag_data_received_cb (GtkWidget *widget,
         g_free(utf8);
         g_free(tmp);
     }
-    RET();
+    return;
 }
 
 static int
@@ -177,12 +174,11 @@ read_button(plugin_instance *p, xconf *xc)
     gchar *iname, *fname, *tooltip, *action;
     GtkWidget *button;
     
-    ENTER;
     if (lb->btn_num >= MAXBUTTONS)
     {
         ERR("launchbar: max number of buttons (%d) was reached."
             "skipping the rest\n", lb->btn_num );
-        RET(0);
+        return 0;
     }
     iname = tooltip = fname = action = NULL;
     XCG(xc, "image", &fname, str);
@@ -227,7 +223,7 @@ read_button(plugin_instance *p, xconf *xc)
     lb->btns[lb->btn_num].lb     = lb;
     lb->btn_num++;
     
-    RET(1);
+    return 1;
 }
 
 static void
@@ -236,7 +232,6 @@ launchbar_size_alloc(GtkWidget *widget, GtkAllocation *a,
 {
     int dim;
 
-    ENTER;
     if (lb->plugin.panel->orientation == GTK_ORIENTATION_HORIZONTAL) 
         dim = a->height / lb->iconsize;
     else
@@ -244,7 +239,7 @@ launchbar_size_alloc(GtkWidget *widget, GtkAllocation *a,
     DBG("width=%d height=%d iconsize=%d -> dim=%d\n",
         a->width, a->height, lb->iconsize, dim);
     gtk_bar_set_dimension(GTK_BAR(lb->box), dim);
-    RET();
+    return;
 }
                                       
 static int
@@ -256,7 +251,6 @@ launchbar_constructor(plugin_instance *p)
     static const gchar *launchbar_css =
         "#launchbar button { padding: 0; margin: 0; outline-width: 0; }";
    
-    ENTER;
     lb = (launchbar_priv *) p;
     lb->iconsize = p->panel->max_elem_height;
     DBG("iconsize=%d\n", lb->iconsize);
@@ -281,7 +275,7 @@ launchbar_constructor(plugin_instance *p)
     
     for (i = 0; (pxc = xconf_find(p->xc, "button", i)); i++)
         read_button(p, pxc);
-    RET(1);
+    return 1;
 }
 
 static plugin_class class = {

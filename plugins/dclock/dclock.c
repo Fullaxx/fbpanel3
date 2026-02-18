@@ -67,11 +67,10 @@ typedef struct
 static gboolean
 clicked(GtkWidget *widget, GdkEventButton *event, dclock_priv *dc)
 {
-    ENTER;
     if (event->type == GDK_BUTTON_PRESS && event->button == 3
             && event->state & GDK_CONTROL_MASK)
     {
-        RET(FALSE);
+        return FALSE;
     }
     if (dc->action != NULL)
         g_spawn_command_line_async(dc->action, NULL);
@@ -89,7 +88,7 @@ clicked(GtkWidget *widget, GdkEventButton *event, dclock_priv *dc)
             dc->calendar_window = NULL;
         }
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 static gint
@@ -100,7 +99,6 @@ clock_update(dclock_priv *dc)
     struct tm * detail;
     int i, x, y;
     
-    ENTER;
     time(&now);
     detail = localtime(&now);
 
@@ -161,7 +159,7 @@ clock_update(dclock_priv *dc)
         else
             gtk_widget_set_tooltip_markup(dc->plugin.pwid, NULL);        
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 static void
@@ -171,7 +169,6 @@ dclock_set_color(GdkPixbuf *glyphs, guint32 color)
     int w, h;
     guint r, g, b;
     
-    ENTER;
     p1 = gdk_pixbuf_get_pixels(glyphs);
     h = gdk_pixbuf_get_height(glyphs);
     r = (color & 0x00ff0000) >> 16;
@@ -193,7 +190,7 @@ dclock_set_color(GdkPixbuf *glyphs, guint32 color)
         p1 += gdk_pixbuf_get_rowstride(glyphs);
     }
     DBG("here\n");
-    RET();
+    return;
 }
 
 static void
@@ -202,7 +199,6 @@ dclock_create_pixbufs(dclock_priv *dc)
     int width, height;
     GdkPixbuf *ch, *cv;
     
-    ENTER;
     width = height = SHADOW;
     width += COLON_WIDTH + 4 * DIGIT_WIDTH;
     height += DIGIT_HEIGHT;
@@ -229,7 +225,7 @@ done:
     dc->clock = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, width, height);
     DBG("width=%d height=%d\n", width, height);
     gdk_pixbuf_fill(dc->clock, 0);
-    RET();
+    return;
 }
 
 static void
@@ -237,11 +233,10 @@ dclock_destructor(plugin_instance *p)
 {
     dclock_priv *dc = (dclock_priv *)p;
 
-    ENTER;
     if (dc->timer)
         g_source_remove(dc->timer);
     gtk_widget_destroy(dc->main);
-    RET();
+    return;
 }
 
 static int
@@ -251,12 +246,11 @@ dclock_constructor(plugin_instance *p)
     dclock_priv *dc;
     //int width;
     
-    ENTER;
     DBG("dclock: use 'tclock' plugin for text version of a time and date\n");
     dc = (dclock_priv *) p;
     dc->glyphs = gdk_pixbuf_new_from_file(IMGPREFIX "/dclock_glyphs.png", NULL);
     if (!dc->glyphs)
-        RET(0);
+        return 0;
 
     dc->cfmt = NULL;
     dc->tfmt = TOOLTIP_FMT;
@@ -310,7 +304,7 @@ dclock_constructor(plugin_instance *p)
     dc->timer = g_timeout_add(1000, (GSourceFunc) clock_update, (gpointer)dc);
     clock_update(dc);
     
-    RET(1);
+    return 1;
 }
 
 

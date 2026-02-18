@@ -24,27 +24,24 @@ change_desktop(deskno_priv *dc, int delta)
 {
     int newdesk = dc->deskno + delta;
 
-    ENTER;
     if (newdesk < 0)
         newdesk = dc->desknum - 1;
     else if (newdesk >= dc->desknum)
         newdesk = 0;
     DBG("%d/%d -> %d\n", dc->deskno, dc->desknum, newdesk);
     Xclimsg(GDK_ROOT_WINDOW(), a_NET_CURRENT_DESKTOP, newdesk, 0, 0, 0, 0);
-    RET();
+    return;
 }
 
 static void
 clicked(GtkWidget *widget, deskno_priv *dc)
 {
-    ENTER;
     change_desktop(dc, 1);
 }
  
 static gboolean
 scrolled(GtkWidget *widget, GdkEventScroll *event, deskno_priv *dc)
 {
-    ENTER;
     change_desktop(dc, (event->direction == GDK_SCROLL_UP
             || event->direction == GDK_SCROLL_LEFT) ? -1 : 1);
     return FALSE;
@@ -55,19 +52,17 @@ name_update(GtkWidget *widget, deskno_priv *dc)
 {
     char buffer [15];
 
-    ENTER;
     dc->deskno = get_net_current_desktop();
     snprintf(buffer, sizeof(buffer), "<b>%d</b>", dc->deskno + 1);
     gtk_label_set_markup(GTK_LABEL(dc->namew), buffer);
-    RET(TRUE);
+    return TRUE;
 }
 
 static gint
 update(GtkWidget *widget, deskno_priv *dc)
 {
-    ENTER;
     dc->desknum = get_net_number_of_desktops();
-    RET(TRUE);
+    return TRUE;
 }
 
 static int
@@ -75,7 +70,6 @@ deskno_constructor(plugin_instance *p)
 {
     deskno_priv *dc;
     
-    ENTER;
     dc = (deskno_priv *) p;
     dc->main = gtk_button_new();
     gtk_button_set_relief(GTK_BUTTON(dc->main), GTK_RELIEF_NONE);
@@ -95,7 +89,7 @@ deskno_constructor(plugin_instance *p)
         (name_update), (gpointer) dc);
     g_signal_connect(G_OBJECT(fbev), "number_of_desktops", G_CALLBACK
         (update), (gpointer) dc);
-    RET(1);
+    return 1;
 }
 
 
@@ -104,10 +98,9 @@ deskno_destructor(plugin_instance *p)
 {
   deskno_priv *dc = (deskno_priv *) p;
 
-  ENTER;
   g_signal_handlers_disconnect_by_func(G_OBJECT(fbev), name_update, dc);
   g_signal_handlers_disconnect_by_func(G_OBJECT(fbev), update, dc); 
-  RET();
+  return;
 }
 
 static plugin_class class = {

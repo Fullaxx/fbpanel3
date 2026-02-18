@@ -30,7 +30,6 @@ typedef struct {
 static void
 tray_bg_changed(FbBg *bg, GtkWidget *widget)
 {
-    ENTER;
     {
         GtkAllocation alloc;
         gtk_widget_get_allocation(widget, &alloc);
@@ -41,27 +40,25 @@ tray_bg_changed(FbBg *bg, GtkWidget *widget)
         gtk_main_iteration();
     gtk_widget_show(widget);
     gtk_widget_set_size_request(widget, -1, -1);
-    RET();
+    return;
 }
 
 static void
 tray_added (EggTrayManager *manager, GtkWidget *icon, tray_priv *tr)
 {
-    ENTER;
     gtk_box_pack_end(GTK_BOX(tr->box), icon, FALSE, FALSE, 0);
     gtk_widget_show(icon);
     gdk_display_sync(gtk_widget_get_display(icon));
     tray_bg_changed(NULL, tr->plugin.pwid);
-    RET();
+    return;
 }
 
 static void
 tray_removed (EggTrayManager *manager, GtkWidget *icon, tray_priv *tr)
 {
-    ENTER;
     DBG("del icon\n");
     tray_bg_changed(NULL, tr->plugin.pwid);
-    RET();
+    return;
 }
 
 static void
@@ -71,7 +68,6 @@ message_sent (EggTrayManager *manager, GtkWidget *icon, const char *text,
     /* FIXME multihead */
     int x, y;
     
-    ENTER;
     gdk_window_get_origin (gtk_widget_get_window(icon), &x, &y);
     {
         GdkMonitor *mon = gdk_display_get_primary_monitor(gdk_display_get_default());
@@ -79,15 +75,14 @@ message_sent (EggTrayManager *manager, GtkWidget *icon, const char *text,
         gdk_monitor_get_geometry(mon, &geom);
         fixed_tip_show (0, x, y, FALSE, geom.y + geom.height - 50, text);
     }
-    RET();
+    return;
 }
 
 static void
 message_cancelled (EggTrayManager *manager, GtkWidget *icon, glong id,
     void *data)
 {
-    ENTER;
-    RET();
+    return;
 }
 
 static void
@@ -95,14 +90,13 @@ tray_destructor(plugin_instance *p)
 {
     tray_priv *tr = (tray_priv *) p;
 
-    ENTER;
     g_signal_handler_disconnect(tr->bg, tr->sid);
     g_object_unref(tr->bg);
     /* Make sure we drop the manager selection */
     if (tr->tray_manager)
         g_object_unref(G_OBJECT(tr->tray_manager));
     fixed_tip_hide();
-    RET();
+    return;
 }
 
 
@@ -112,7 +106,6 @@ tray_size_alloc(GtkWidget *widget, GtkAllocation *a,
 {
     int dim, size;
 
-    ENTER;
     size = tr->plugin.panel->max_elem_height;
     if (tr->plugin.panel->orientation == GTK_ORIENTATION_HORIZONTAL) 
         dim = a->height / size;
@@ -121,7 +114,7 @@ tray_size_alloc(GtkWidget *widget, GtkAllocation *a,
     DBG("width=%d height=%d iconsize=%d -> dim=%d\n",
         a->width, a->height, size, dim);
     gtk_bar_set_dimension(GTK_BAR(tr->box), dim);
-    RET();
+    return;
 }
   
 
@@ -131,7 +124,6 @@ tray_constructor(plugin_instance *p)
     tray_priv *tr;
     GdkScreen *screen;
 
-    ENTER;
     tr = (tray_priv *) p;
     class_get("tray");
     g_signal_connect(G_OBJECT(p->pwid), "size-allocate",
@@ -152,7 +144,7 @@ tray_constructor(plugin_instance *p)
     if (egg_tray_manager_check_running(screen)) {
         tr->tray_manager = NULL;
         ERR("tray: another systray already running\n");
-        RET(1);
+        return 1;
     }
     tr->tray_manager = egg_tray_manager_new ();
     if (!egg_tray_manager_manage_screen (tr->tray_manager, screen))
@@ -168,7 +160,7 @@ tray_constructor(plugin_instance *p)
         G_CALLBACK(message_cancelled), tr);
     
     gtk_widget_show_all(tr->box);
-    RET(1);
+    return 1;
 
 }
 

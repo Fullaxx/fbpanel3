@@ -32,7 +32,6 @@ effects_changed(gconf_block *b)
 {
     int i;
 
-    ENTER;
     XCG(b->data, "transparent", &i, enum, bool_enum);
     gtk_widget_set_sensitive(color_block->main, i);
     XCG(b->data, "roundcorners", &i, enum, bool_enum);
@@ -40,7 +39,7 @@ effects_changed(gconf_block *b)
     XCG(b->data, "autohide", &i, enum, bool_enum);
     gtk_widget_set_sensitive(ah_block->main, i);
 
-    RET();
+    return;
 }
 
 
@@ -49,7 +48,6 @@ mk_effects_block(xconf *xc)
 {
     GtkWidget *w;
 
-    ENTER;
 
     /* label */
     w = gtk_label_new(NULL);
@@ -119,10 +117,9 @@ prop_changed(gconf_block *b)
 {
     int i = 0;
 
-    ENTER;
     XCG(b->data, "setlayer", &i, enum, bool_enum);
     gtk_widget_set_sensitive(layer_block->main, i);
-    RET();
+    return;
 }
 
 static void
@@ -130,7 +127,6 @@ mk_prop_block(xconf *xc)
 {
     GtkWidget *w;
 
-    ENTER;
 
     /* label */
     w = gtk_label_new(NULL);
@@ -180,7 +176,6 @@ geom_changed(gconf_block *b)
 {
     int i, j;
 
-    ENTER;
     i = gtk_combo_box_get_active(GTK_COMBO_BOX(allign_opt));
     gtk_widget_set_sensitive(xmargin_spin, (i != ALLIGN_CENTER));
     i = gtk_combo_box_get_active(GTK_COMBO_BOX(width_opt));
@@ -198,7 +193,7 @@ geom_changed(gconf_block *b)
             (j == EDGE_RIGHT || j == EDGE_LEFT)
             ? geometry.height : geometry.width);
     }
-    RET();
+    return;
 }
 
 static void
@@ -206,7 +201,6 @@ mk_geom_block(xconf *xc)
 {
     GtkWidget *w;
 
-    ENTER;
 
     /* label */
     w = gtk_label_new(NULL);
@@ -263,7 +257,6 @@ mk_tab_global(xconf *xc)
 {
     GtkWidget *page;
 
-    ENTER;
     page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
     gtk_container_set_border_width(GTK_CONTAINER(page), 10);
     gl_block = gconf_block_new(NULL, NULL, 0);
@@ -279,7 +272,7 @@ mk_tab_global(xconf *xc)
     effects_changed(effects_block);
     prop_changed(prop_block);
 
-    RET(page);
+    return page;
 }
 
 static GtkWidget *
@@ -288,7 +281,6 @@ mk_tab_profile(xconf *xc)
     GtkWidget *page, *label;
     gchar *s1;
 
-    ENTER;
     page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
     gtk_container_set_border_width(GTK_CONTAINER(page), 10);
 
@@ -300,7 +292,7 @@ mk_tab_profile(xconf *xc)
     g_free(s1);
 
     gtk_widget_show_all(page);
-    RET(page);
+    return page;
 }
 
 static void
@@ -308,7 +300,6 @@ dialog_response_event(GtkDialog *_dialog, gint rid, xconf *xc)
 {
     xconf *oxc = g_object_get_data(G_OBJECT(dialog), "oxc");
 
-    ENTER;
     if (rid == GTK_RESPONSE_APPLY ||
         rid == GTK_RESPONSE_OK)
     {
@@ -339,7 +330,7 @@ dialog_response_event(GtkDialog *_dialog, gint rid, xconf *xc)
         xconf_del(xc, FALSE);
         xconf_del(oxc, FALSE);
     }
-    RET();
+    return;
 }
 
 static gboolean
@@ -356,7 +347,6 @@ mk_dialog(xconf *oxc)
     gchar *name;
     xconf *xc;
 
-    ENTER;
     DBG("creating dialog\n");
     //name = g_strdup_printf("fbpanel settings: <%s> profile", cprofile);
     name = g_strdup_printf("fbpanel settings: <%s> profile",
@@ -416,16 +406,15 @@ mk_dialog(xconf *oxc)
     gtk_notebook_append_page(GTK_NOTEBOOK(nb), sw, label);
 
     gtk_widget_show_all(dialog);
-    RET(dialog);
+    return dialog;
 }
 
 void
 configure(xconf *xc)
 {
-    ENTER;
     DBG("dialog %p\n",  dialog);
     if (!dialog)
         dialog = mk_dialog(xc);
     gtk_widget_show(dialog);
-    RET();
+    return;
 }

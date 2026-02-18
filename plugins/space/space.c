@@ -6,8 +6,6 @@
 #include "misc.h"
 #include "plugin.h"
 
-//#define DEBUGPRN
-#include "dbg.h"
 
 
 typedef struct {
@@ -20,8 +18,7 @@ typedef struct {
 static void
 space_destructor(plugin_instance *p)
 {
-    ENTER;
-    RET();
+    return;
 }
 
 static int
@@ -29,7 +26,6 @@ space_constructor(plugin_instance *p)
 {
     int w, h, size;
 
-    ENTER;
     size = 1;
     XCG(p->xc, "size", &size, int);
     
@@ -41,7 +37,7 @@ space_constructor(plugin_instance *p)
         h = size;
     } 
     gtk_widget_set_size_request(p->pwid, w, h);
-    RET(1);
+    return 1;
 }
 
 static plugin_class class = {

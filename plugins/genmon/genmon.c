@@ -22,7 +22,6 @@
 #include "plugin.h"
 
 //#define DEBUG
-#include "dbg.h"
 
 #define FMT "<span size='%s' foreground='%s'>%s</span>"
 
@@ -45,7 +44,6 @@ text_update(genmon_priv *gm)
     char *markup;
     int len;
 
-    ENTER;
     fp = popen(gm->command, "r");
     (void)fgets(text, sizeof(text), fp);
     pclose(fp);
@@ -59,7 +57,7 @@ text_update(genmon_priv *gm)
         gtk_label_set_markup (GTK_LABEL(gm->main), markup);
         g_free(markup);
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 static void
@@ -67,11 +65,10 @@ genmon_destructor(plugin_instance *p)
 {
     genmon_priv *gm = (genmon_priv *) p;
 
-    ENTER;
     if (gm->timer) {
         g_source_remove(gm->timer);
     }
-    RET();
+    return;
 }
 
 static int
@@ -79,7 +76,6 @@ genmon_constructor(plugin_instance *p)
 {
     genmon_priv *gm;
 
-    ENTER;
     gm = (genmon_priv *) p;
     gm->command = "date +%R";
     gm->time = 1;
@@ -102,7 +98,7 @@ genmon_constructor(plugin_instance *p)
     gm->timer = g_timeout_add((guint) gm->time * 1000,
         (GSourceFunc) text_update, (gpointer) gm);
     
-    RET(1);
+    return 1;
 }
 
 

@@ -12,13 +12,12 @@ get_token_eq(gchar *buf, gchar *token, gchar *value, gboolean *ret)
     int len;
     gchar *var;
 
-    ENTER;
     len = strlen(token);
     if (!(var = strstr(buf, token)))
-        RET(FALSE);
+        return FALSE;
     for (var = var + len; isspace(*var); var++) ;
     *ret = !strncmp(var, value, strlen(value));
-    RET(TRUE);
+    return TRUE;
 }
 
 static gboolean
@@ -27,14 +26,13 @@ get_token_int(gchar *buf, gchar *token, gint *value)
     int len;
     gchar *var;
 
-    ENTER;
     len = strlen(token);
     if (!(var = strstr(buf, token)))
-        RET(FALSE);
+        return FALSE;
     for (var = var + len; isspace(*var); var++) ;
     if (sscanf(var, "%d", value) == 1)
-        RET(TRUE);
-    RET(FALSE);
+        return TRUE;
+    return FALSE;
 }
 
 static gboolean
@@ -44,7 +42,6 @@ read_proc(battery_priv *c, GString *path)
     gchar *buf;
     gboolean ret, exist, charging;
 
-    ENTER;
     len = path->len;
 
     g_string_append(path, "/info");
@@ -52,38 +49,38 @@ read_proc(battery_priv *c, GString *path)
     DBG("reading %s %s\n", path->str, ret ? "ok" : "fail");
     g_string_truncate(path, len);
     if (!ret)
-        RET(FALSE);
+        return FALSE;
     ret = get_token_eq(buf, "present:", "yes", &exist)
         && exist && get_token_int(buf, "last full capacity:", &lfcap);
 
     g_free(buf);
     if (!ret)
-        RET(FALSE);
+        return FALSE;
 
     g_string_append(path, "/state");
     ret = g_file_get_contents(path->str, &buf, 0, NULL);
     DBG("reading %s %s\n", path->str, ret ? "ok" : "fail");
     g_string_truncate(path, len);
     if (!ret)
-        RET(FALSE);
+        return FALSE;
     ret = get_token_eq(buf, "present:", "yes", &exist)
         && exist
         && get_token_int(buf, "remaining capacity:", &rcap)
         && get_token_eq(buf, "charging state:", "charging", &charging);
     g_free(buf);
     if (!ret)
-        RET(FALSE);
+        return FALSE;
     DBG("battery=%s\nlast full capacity=%d\nremaining capacity=%d\n"
         "charging=%d\n",
         path->str, lfcap, rcap, charging);
 
     if (!(lfcap >= rcap && lfcap > 0 && rcap >= 0))
-        RET(FALSE);
+        return FALSE;
 
     c->exist = TRUE;
     c->charging = charging;
     c->level = (int) ((gfloat) rcap * 100 / (gfloat) lfcap);
-    RET(TRUE);
+    return TRUE;
 }
 
 static gboolean
@@ -95,7 +92,6 @@ battery_update_os_proc(battery_priv *c)
     gboolean ret = FALSE;
     const gchar *file;
 
-    ENTER;
     c->exist = FALSE;
     path = g_string_sized_new(200);
     g_string_append(path, PROC_ACPI);
@@ -116,13 +112,12 @@ battery_update_os_proc(battery_priv *c)
 
  out:
     g_string_free(path, TRUE);
-    RET(ret);
+    return ret;
 }
 
 static gboolean
 battery_update_os_sys(battery_priv *c)
 {
-    ENTER;
     c->exist = FALSE;
     power_supply* ps = power_supply_new();
     power_supply_parse(ps);
@@ -134,12 +129,11 @@ battery_update_os_sys(battery_priv *c)
         c->level = (gfloat) bat_capacity;
     }
     power_supply_free(ps);
-    RET(c->exist);
+    return c->exist;
 }
 
 static gboolean
 battery_update_os(battery_priv *c)
 {
-    ENTER;
-    RET(battery_update_os_proc(c) || battery_update_os_sys(c));
+    return battery_update_os_proc(c) || battery_update_os_sys(c);
 }

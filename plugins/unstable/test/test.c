@@ -41,7 +41,6 @@ clock_update(gpointer data)
 {
     test_priv *dc = (test_priv *)data;
     
-    ENTER;
     if (dc->count >= WID_NUM-1)
         dc->delta = -1;
     else if (dc->count <= 0)
@@ -53,7 +52,7 @@ clock_update(gpointer data)
      } else
         gtk_widget_destroy(dc->wid[dc->count]);
     dc->count += dc->delta;
-    RET(TRUE);
+    return TRUE;
 }
 
 
@@ -63,7 +62,6 @@ test_constructor(plugin_instance *p)
     test_priv *dc;
     line s;
     
-    ENTER;
     dc = (test_priv *) p;
     dc->delta = 1;
     while (get_line(p->fp, &s) != LINE_BLOCK_END) {
@@ -73,7 +71,7 @@ test_constructor(plugin_instance *p)
     gtk_widget_show(dc->main);
     gtk_container_add(GTK_CONTAINER(p->pwid), dc->main);
     dc->timer = g_timeout_add(200, clock_update, (gpointer)dc);
-    RET(1);
+    return 1;
 }
 
 
@@ -82,11 +80,10 @@ test_destructor(plugin_instance *p)
 {
     test_priv *dc = (test_priv *) p;
 
-    ENTER;
     if (dc->timer)
         g_source_remove(dc->timer);
     gtk_widget_destroy(dc->main);
-    RET();
+    return;
 }
 
 static plugin_class class = {

@@ -41,7 +41,6 @@ do_app_file(GHashTable *ht, const gchar *file)
     gchar **cats, **tmp;
     xconf *ixc, *vxc, *mxc;
     
-    ENTER;
     DBG("desktop: %s\n", file);
     /* get values */
     name = icon = action = dot = NULL;
@@ -132,7 +131,6 @@ do_app_dir_real(GHashTable *ht, const gchar *dir)
     gchar *cwd;
     const gchar *name;
 
-    ENTER;
     DBG("%s\n", dir);
     cwd = g_get_current_dir();
     if (g_chdir(dir))
@@ -163,7 +161,7 @@ out:
         g_dir_close(d);
     g_chdir(cwd);
     g_free(cwd);
-    RET();
+    return;
 }
 
 static void
@@ -171,7 +169,6 @@ do_app_dir(GHashTable *ht, const gchar *dir)
 {
     gchar *cwd;
 
-    ENTER;    
     cwd = g_get_current_dir();
     DBG("%s\n", dir);
     if (g_hash_table_lookup(ht, dir))
@@ -190,7 +187,7 @@ do_app_dir(GHashTable *ht, const gchar *dir)
 out:
     g_chdir(cwd);
     g_free(cwd);
-    RET();
+    return;
 }
 
 static int
@@ -200,12 +197,11 @@ xconf_cmp_names(gpointer a, gpointer b)
     gchar *s1 = NULL, *s2 = NULL;
     int ret;
     
-    ENTER;
     XCG(aa, "name", &s1, str);
     XCG(bb, "name", &s2, str);
     ret = g_strcmp0(s1, s2);
     DBG("cmp %s %s - %d\n", s1, s2, ret);
-    RET(ret);
+    return ret;
 }
 
 static gboolean
@@ -217,7 +213,6 @@ dir_changed(const gchar *dir, time_t btime)
     gboolean ret = FALSE;
     struct stat buf;
     
-    ENTER;
     DBG("%s\n", dir);
     if (g_stat(dir, &buf))
         return FALSE;
@@ -253,7 +248,7 @@ out:
         g_dir_close(d);
     g_chdir(cwd);
     g_free(cwd);
-    RET(ret);
+    return ret;
 }
 
 gboolean

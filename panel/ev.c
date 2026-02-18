@@ -209,63 +209,56 @@ fb_ev_trigger(FbEv *ev, int signal)
 static void
 ev_current_desktop(FbEv *ev, gpointer p)
 {
-    ENTER;
     ev->current_desktop = -1;
-    RET();
+    return;
 }
 
 static void
 ev_active_window(FbEv *ev, gpointer p)
 {
-    ENTER;
     ev->active_window = None;
-    RET();
+    return;
 }
 
 static void
 ev_number_of_desktops(FbEv *ev, gpointer p)
 {
-    ENTER;
     ev->number_of_desktops = -1;
-    RET();
+    return;
 }
 
 static void
 ev_desktop_names(FbEv *ev, gpointer p)
 {
-    ENTER;
     if (ev->desktop_names) {
         g_strfreev (ev->desktop_names);
         ev->desktop_names = NULL;
     }
-    RET();
+    return;
 }
 static void
 ev_client_list(FbEv *ev, gpointer p)
 {
-    ENTER;
     if (ev->client_list) {
         XFree(ev->client_list);
         ev->client_list = NULL;
     }
-    RET();
+    return;
 }
 
 static void
 ev_client_list_stacking(FbEv *ev, gpointer p)
 {
-    ENTER;
     if (ev->client_list_stacking) {
         XFree(ev->client_list_stacking);
         ev->client_list_stacking = NULL;
     }
-    RET();
+    return;
 }
 
 int
 fb_ev_current_desktop(FbEv *ev)
 {
-    ENTER;
     if (ev->current_desktop == -1) {
         guint *data;
 
@@ -276,13 +269,12 @@ fb_ev_current_desktop(FbEv *ev)
         } else
             ev->current_desktop = 0;
     }
-    RET(ev->current_desktop);
+    return ev->current_desktop;
 }
 
 int
 fb_ev_number_of_desktops(FbEv *ev)
 {
-    ENTER;
      if (ev->number_of_desktops == -1) {
         guint *data;
 
@@ -293,7 +285,7 @@ fb_ev_number_of_desktops(FbEv *ev)
         } else
             ev->number_of_desktops = 0;
     }
-    RET(ev->number_of_desktops);
+    return ev->number_of_desktops;
 
 }
 

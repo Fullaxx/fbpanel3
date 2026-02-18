@@ -10,8 +10,6 @@
 #include "misc.h"
 #include "plugin.h"
 
-//#define DEBUGPRN
-#include "dbg.h"
 
 /* 2010-04 Jared Minch  < jmminch@sourceforge.net >
  *     Calendar and transparency support
@@ -47,7 +45,6 @@ clock_update(gpointer data)
     gchar *utf8;
     size_t rc;
 
-    ENTER;
     g_assert(data != NULL);
     dc = (tclock_priv *)data;
 
@@ -76,13 +73,12 @@ clock_update(gpointer data)
         }
     }
 
-    RET(TRUE);
+    return TRUE;
 }
 
 static gboolean
 clicked(GtkWidget *widget, GdkEventButton *event, tclock_priv *dc)
 {
-    ENTER;
     if (dc->action) {
         g_spawn_command_line_async(dc->action, NULL);
     } else if (dc->show_calendar) {
@@ -99,7 +95,7 @@ clicked(GtkWidget *widget, GdkEventButton *event, tclock_priv *dc)
 
         clock_update(dc);
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 static int
@@ -107,7 +103,6 @@ tclock_constructor(plugin_instance *p)
 {
     tclock_priv *dc;
 
-    ENTER;
     dc = (tclock_priv *) p;
     dc->cfmt = CLOCK_24H_FMT;
     dc->tfmt = TOOLTIP_FMT;
@@ -139,7 +134,7 @@ tclock_constructor(plugin_instance *p)
     gtk_widget_show_all(dc->main);
     dc->timer = g_timeout_add(1000, (GSourceFunc) clock_update, (gpointer)dc);
     gtk_container_add(GTK_CONTAINER(p->pwid), dc->main);
-    RET(1);
+    return 1;
 }
 
 static void
@@ -147,11 +142,10 @@ tclock_destructor( plugin_instance *p )
 {
     tclock_priv *dc = (tclock_priv *) p;
 
-    ENTER;
     if (dc->timer)
         g_source_remove(dc->timer);
     gtk_widget_destroy(dc->main);
-    RET();
+    return;
 }
 
 static plugin_class class = {

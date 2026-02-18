@@ -177,7 +177,6 @@ gtk_bar_size_allocate(GtkWidget *widget, GtkAllocation *allocation)
     GtkAllocation child_allocation;
     gint nvis_children, tmp, rows, cols, dim;
 
-    ENTER;
     DBG("a.w=%d  a.h=%d\n", allocation->width, allocation->height);
     bar = GTK_BAR(widget);
     gtk_widget_set_allocation(widget, allocation);
@@ -192,7 +191,7 @@ gtk_bar_size_allocate(GtkWidget *widget, GtkAllocation *allocation)
     dim = MIN(bar->dimension, nvis_children);
     if (nvis_children == 0) {
         g_list_free(children);
-        RET();
+        return;
     }
     if (bar->orient == GTK_ORIENTATION_HORIZONTAL) {
         rows = dim;
@@ -234,26 +233,7 @@ gtk_bar_size_allocate(GtkWidget *widget, GtkAllocation *allocation)
         }
     }
     g_list_free(children);
-    RET();
+    return;
 }
 
 
-#if 0
-static gint
-gtk_bar_expose (GtkWidget *widget, GdkEventExpose *event)
-{
-    ENTER;
-
-    if (GTK_WIDGET_DRAWABLE (widget)) {
-        int w, h;
-
-        DBG("w, h = %d,%d\n", w, h);
-        if (!GTK_WIDGET_APP_PAINTABLE (widget))
-            gtk_paint_flat_box (widget->style, widget->window,
-                  widget->state, GTK_SHADOW_NONE,
-                  NULL /*&event->area*/, widget, NULL,
-                  0, 0, w, h);
-    }
-    RET(FALSE);
-}
-#endif

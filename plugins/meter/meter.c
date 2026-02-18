@@ -15,14 +15,13 @@ meter_set_level(meter_priv *m, int level)
     int i;
     GdkPixbuf *pb;
 
-    ENTER;
     if (m->level == level)
-        RET();
+        return;
     if (!m->num)
-        RET();
+        return;
     if (level < 0 || level > 100) {
         ERR("meter: illegal level %d\n", level);
-        RET();
+        return;
     }
     i = roundf((gfloat) level / 100 * (m->num - 1));
     DBG("level=%f icon=%d\n", level, i);
@@ -36,7 +35,7 @@ meter_set_level(meter_priv *m, int level)
             g_object_unref(G_OBJECT(pb));
     }
     m->level = level;
-    RET();
+    return;
 }
 
 static void
@@ -44,9 +43,8 @@ meter_set_icons(meter_priv *m, gchar **icons)
 {
     gchar **s;
 
-    ENTER;
     if (m->icons == icons)
-        RET();
+        return;
     for (s = icons; *s; s++)
         DBG("icon %s\n", *s);
     m->num = (s - icons);
@@ -54,15 +52,14 @@ meter_set_icons(meter_priv *m, gchar **icons)
     m->icons = icons;
     m->cur_icon = -1;
     m->level = -1;
-    RET();
+    return;
 }
 static void
 update_view(meter_priv *m)
 {
-    ENTER;
     m->cur_icon = -1;
     meter_set_level(m, m->level);
-    RET();
+    return;
 }
 
 static int
@@ -70,7 +67,6 @@ meter_constructor(plugin_instance *p)
 {
     meter_priv *m;
     
-    ENTER;
     m = (meter_priv *) p;
     m->meter = gtk_image_new();
     gtk_widget_set_halign(m->meter, GTK_ALIGN_CENTER);
@@ -81,7 +77,7 @@ meter_constructor(plugin_instance *p)
     m->size = p->panel->max_elem_height;
     m->itc_id = g_signal_connect_swapped(G_OBJECT(icon_theme),
         "changed", (GCallback) update_view, m);
-    RET(1);
+    return 1;
 }
 
 static void
@@ -89,9 +85,8 @@ meter_destructor(plugin_instance *p)
 {
     meter_priv *m = (meter_priv *) p;
 
-    ENTER;
     g_signal_handler_disconnect(G_OBJECT(icon_theme), m->itc_id);
-    RET();
+    return;
 }
 
 static meter_class class = {

@@ -52,9 +52,8 @@ chart_add_tick(chart_priv *c, float *val)
 {
     int i;
 
-    ENTER;
     if (!c->ticks)
-        RET();
+        return;
     for (i = 0; i < c->rows; i++) {
         if (val[i] < 0)
             val[i] = 0;
@@ -66,7 +65,7 @@ chart_add_tick(chart_priv *c, float *val)
     c->pos = (c->pos + 1) %  c->w;
     gtk_widget_queue_draw(c->da);
 
-    RET();
+    return;
 }
 
 static void
@@ -74,9 +73,8 @@ chart_draw(chart_priv *c, cairo_t *cr)
 {
     int j, i, y;
 
-    ENTER;
     if (!c->ticks || !c->gc_cpu)
-        RET();
+        return;
     for (i = 1; i < c->w-1; i++) {
         y = c->h-2;
         for (j = 0; j < c->rows; j++) {
@@ -92,13 +90,12 @@ chart_draw(chart_priv *c, cairo_t *cr)
             y -= val;
         }
     }
-    RET();
+    return;
 }
 
 static void
 chart_size_allocate(GtkWidget *widget, GtkAllocation *a, chart_priv *c)
 {
-    ENTER;
     if (c->w != a->width || c->h != a->height) {
         chart_free_ticks(c);
         c->w = a->width;
@@ -126,7 +123,7 @@ chart_size_allocate(GtkWidget *widget, GtkAllocation *a, chart_priv *c)
         }
     }
     gtk_widget_queue_draw(c->da);
-    RET();
+    return;
 }
 
 
@@ -134,13 +131,12 @@ static gboolean
 chart_draw_event(GtkWidget *widget, cairo_t *cr, chart_priv *c)
 {
     GtkStyleContext *ctx;
-    ENTER;
     chart_draw(c, cr);
 
     ctx = gtk_widget_get_style_context(widget);
     gtk_render_frame(ctx, cr, c->fx, c->fy, c->fw, c->fh);
 
-    RET(FALSE);
+    return FALSE;
 }
 
 static void
@@ -148,9 +144,8 @@ chart_alloc_ticks(chart_priv *c)
 {
     int i;
 
-    ENTER;
     if (!c->w || !c->rows)
-        RET();
+        return;
     c->ticks = g_new0(gint *, c->rows);
     for (i = 0; i < c->rows; i++) {
         c->ticks[i] = g_new0(gint, c->w);
@@ -158,7 +153,7 @@ chart_alloc_ticks(chart_priv *c)
             DBG2("can't alloc mem: %p %d\n", c->ticks[i], c->w);
     }
     c->pos = 0;
-    RET();
+    return;
 }
 
 
@@ -167,14 +162,13 @@ chart_free_ticks(chart_priv *c)
 {
     int i;
 
-    ENTER;
     if (!c->ticks)
-        RET();
+        return;
     for (i = 0; i < c->rows; i++) 
         g_free(c->ticks[i]);
     g_free(c->ticks);
     c->ticks = NULL;
-    RET();
+    return;
 }
 
 
@@ -183,14 +177,13 @@ chart_alloc_gcs(chart_priv *c, gchar *colors[])
 {
     int i;
 
-    ENTER;
     c->gc_cpu = g_new0(GdkRGBA, c->rows);
     if (c->gc_cpu) {
         for (i = 0; i < c->rows; i++) {
             gdk_rgba_parse(&c->gc_cpu[i], colors[i]);
         }
     }
-    RET();
+    return;
 }
 
 
@@ -198,26 +191,24 @@ chart_alloc_gcs(chart_priv *c, gchar *colors[])
 static void
 chart_free_gcs(chart_priv *c)
 {
-    ENTER;
     if (c->gc_cpu) {
         g_free(c->gc_cpu);
         c->gc_cpu = NULL;
     }
-    RET();
+    return;
 }
 
 
 static void
 chart_set_rows(chart_priv *c, int num, gchar *colors[])
 {    
-    ENTER;
     g_assert(num > 0 && num < 10);
     chart_free_ticks(c);
     chart_free_gcs(c);
     c->rows = num;
     chart_alloc_ticks(c);
     chart_alloc_gcs(c, colors);
-    RET();
+    return;
 }
 
 static int
@@ -225,7 +216,6 @@ chart_constructor(plugin_instance *p)
 {
     chart_priv *c;
     
-    ENTER;
     /* must be allocated by caller */
     c = (chart_priv *) p;
     c->rows = 0;
@@ -241,7 +231,7 @@ chart_constructor(plugin_instance *p)
     g_signal_connect_after (G_OBJECT (p->pwid), "draw",
           G_CALLBACK (chart_draw_event), (gpointer) c);
     
-    RET(1);
+    return 1;
 }
 
 static void
@@ -249,10 +239,9 @@ chart_destructor(plugin_instance *p)
 {
     chart_priv *c = (chart_priv *) p;
 
-    ENTER;
     chart_free_ticks(c);
     chart_free_gcs(c);
-    RET();
+    return;
 }
 
 static chart_class class = {

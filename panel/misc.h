@@ -48,8 +48,6 @@ GtkWidget *fb_button_new(gchar *iname, gchar *fname, int width, int height,
         gulong hicolor, gchar *name);
 
 
-void menu_pos(GtkMenu *menu, gint *x, gint *y, gboolean *push_in, GtkWidget *widget);
-
 void configure();
 gchar *indent(int level);
 

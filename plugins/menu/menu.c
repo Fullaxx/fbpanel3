@@ -30,9 +30,8 @@ menu_expand_xc(xconf *xc, menu_priv *m)
     xconf *nxc, *cxc, *smenu_xc;
     GSList *w;
 
-    ENTER;
     if (!xc)
-        RET(NULL);
+        return NULL;
     nxc = xconf_new(xc->name, xc->value);
     DBG("new node:%s\n", nxc->name);
     for (w = xc->sons; w; w = g_slist_next(w))
@@ -58,18 +57,6 @@ menu_expand_xc(xconf *xc, menu_priv *m)
     return nxc;
 }
 
-#if 0
-/* XXX: should be global service with following API
- * register_command, unregister_command, run_command
- */
-static void
-run_command(GtkWidget *widget, void (*cmd)(void))
-{
-    ENTER;
-    cmd();
-    RET();
-}
-#endif
 
 static GtkWidget *
 menu_create_separator()
@@ -117,17 +104,6 @@ menu_create_item(xconf *xc, GtkWidget *menu, menu_priv *m)
     if (cmd)
     {
         /* XXX: implement command API */
-#if 0
-        command *tmp;
-        
-        for (tmp = commands; tmp->name; tmp++)
-            if (!g_ascii_strcasecmp(cmd, tmp->name))
-            {
-                g_signal_connect(G_OBJECT(mi), "activate",
-                        (GCallback)run_command, tmp->cmd);
-                goto done;
-            }
-#endif        
     }
    
 done:
@@ -168,10 +144,9 @@ menu_create_menu(xconf *xc, gboolean ret_menu, menu_priv *m)
 static gboolean
 menu_unmap(GtkWidget *menu, plugin_instance *p)
 {
-    ENTER;
     if (p->panel->autohide)
         ah_start(p->panel);
-    RET(FALSE);
+    return FALSE;
 }
 
 static void
@@ -179,7 +154,6 @@ menu_create(plugin_instance *p)
 {
     menu_priv *m = (menu_priv *) p;
     
-    ENTER;
     if (m->menu)
         menu_destroy(m);
     m->xc = menu_expand_xc(p->xc, m);
@@ -189,13 +163,12 @@ menu_create(plugin_instance *p)
     m->btime = time(NULL);
     if (m->has_system_menu) 
         m->tout = g_timeout_add(30000, (GSourceFunc) check_system_menu, p);
-    RET();
+    return;
 }
 
 static void
 menu_destroy(menu_priv *m)
 {
-    ENTER;
     if (m->menu) {
         gtk_widget_destroy(m->menu);
         m->menu = NULL;
@@ -213,7 +186,7 @@ menu_destroy(menu_priv *m)
         xconf_del(m->xc, FALSE);
         m->xc = NULL;
     }
-    RET();
+    return;
 }
 
 static gboolean
@@ -221,12 +194,11 @@ my_button_pressed(GtkWidget *widget, GdkEventButton *event, plugin_instance *p)
 {
     menu_priv *m = (menu_priv *) p;
 
-    ENTER;
     /* propagate Control-Button3 to the panel */
     if (event->type == GDK_BUTTON_PRESS && event->button == 3
         && event->state & GDK_CONTROL_MASK)
     {
-        RET(FALSE);
+        return FALSE;
     }
 
     {
@@ -243,7 +215,7 @@ my_button_pressed(GtkWidget *widget, GdkEventButton *event, plugin_instance *p)
             gtk_menu_popup_at_pointer(GTK_MENU(m->menu), (GdkEvent *)event);
         }
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 
@@ -254,7 +226,6 @@ make_button(plugin_instance *p, xconf *xc)
     menu_priv *m;
     gchar *fname, *iname;
     
-    ENTER;
     m = (menu_priv *) p;
     /* XXX: this code is duplicated in every plugin.
      * Lets run it once in a panel */
@@ -289,12 +260,11 @@ rebuild_menu(plugin_instance *p)
 {
     menu_priv *m = (menu_priv *) p;
     
-    ENTER;
     if (m->menu && gtk_widget_get_mapped(m->menu))
-        RET(TRUE);
+        return TRUE;
     menu_create(p);
     m->rtout = 0;
-    RET(FALSE);
+    return FALSE;
 }
 
 static void
@@ -302,12 +272,11 @@ schedule_rebuild_menu(plugin_instance *p)
 {
     menu_priv *m = (menu_priv *) p;
     
-    ENTER;
     if (!m->rtout) {
         DBG("scheduling menu rebuild p=%p\n", p);
         m->rtout = g_timeout_add(2000, (GSourceFunc) rebuild_menu, p);
     }
-    RET();
+    return;
 
 }
 
@@ -316,11 +285,10 @@ check_system_menu(plugin_instance *p)
 {
     menu_priv *m = (menu_priv *) p;
     
-    ENTER;
     if (systemmenu_changed(m->btime)) 
         schedule_rebuild_menu(p);
     
-    RET(TRUE);
+    return TRUE;
 }
 
 static int
@@ -328,7 +296,6 @@ menu_constructor(plugin_instance *p)
 {
     menu_priv *m;
 
-    ENTER;
     m = (menu_priv *) p;
     m->icon_size = MENU_DEFAULT_ICON_SIZE;
     XCG(p->xc, "iconsize", &m->icon_size, int);
@@ -337,7 +304,7 @@ menu_constructor(plugin_instance *p)
     g_signal_connect_swapped(G_OBJECT(icon_theme),
         "changed", (GCallback) schedule_rebuild_menu, p);
     schedule_rebuild_menu(p);
-    RET(1);
+    return 1;
 }
 
 
@@ -346,12 +313,11 @@ menu_destructor(plugin_instance *p)
 {
     menu_priv *m = (menu_priv *) p;
 
-    ENTER;
     g_signal_handlers_disconnect_by_func(G_OBJECT(icon_theme),
         schedule_rebuild_menu, p);
     menu_destroy(m);
     gtk_widget_destroy(m->bg);
-    RET();
+    return;
 }
 
 

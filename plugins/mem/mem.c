@@ -126,7 +126,6 @@ mem_update(mem_priv *mem)
     gdouble mu, su;
     char str[90];
     
-    ENTER;
     mu = su = 0;
     bzero(&stats, sizeof(stats));
     mem_usage();
@@ -144,7 +143,7 @@ mem_update(mem_priv *mem)
     gtk_progress_bar_set_fraction (GTK_PROGRESS_BAR(mem->mem_pb), mu);
     if (mem->show_swap)
         gtk_progress_bar_set_fraction (GTK_PROGRESS_BAR(mem->swap_pb), su);
-    RET(TRUE);
+    return TRUE;
 }
 
 
@@ -153,11 +152,10 @@ mem_destructor(plugin_instance *p)
 {
     mem_priv *mem = (mem_priv *)p;
 
-    ENTER;
     if (mem->timer)
         g_source_remove(mem->timer);
     gtk_widget_destroy(mem->box);
-    RET();
+    return;
 }
 
 static int
@@ -166,7 +164,6 @@ mem_constructor(plugin_instance *p)
     mem_priv *mem;
     gint w, h;
 
-    ENTER;
     mem = (mem_priv *) p;
     XCG(p->xc, "ShowSwap", &mem->show_swap, enum, bool_enum);
     mem->box = p->panel->my_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
@@ -207,7 +204,7 @@ mem_constructor(plugin_instance *p)
     gtk_widget_set_tooltip_markup(mem->plugin.pwid, "XXX");
     mem_update(mem);
     mem->timer = g_timeout_add(3000, (GSourceFunc) mem_update, (gpointer)mem);
-    RET(1);
+    return 1;
 }
 
 static plugin_class class = {

@@ -32,14 +32,13 @@ fetch_gravatar_done(GPid pid, gint status, gpointer data)
     plugin_instance *p G_GNUC_UNUSED = data;
     gchar *image = NULL, *icon = NULL;
 
-    ENTER;
     DBG("status %d\n", status);
     g_spawn_close_pid(c->pid);
     c->pid = 0;
     c->sid = 0;
 
     if (status)
-        RET();
+        return;
     DBG("rebuild menu\n");
     XCG(p->xc, "icon", &icon, strdup);
     XCG(p->xc, "image", &image, strdup);
@@ -55,7 +54,7 @@ fetch_gravatar_done(GPid pid, gint status, gpointer data)
         XCS(p->xc, "icon", icon, value);
         g_free(icon);
     }
-    RET();
+    return;
 }
 
 
@@ -71,7 +70,6 @@ fetch_gravatar(gpointer data)
     gchar *image = "/tmp/gravatar";
     gchar *argv[] = { "wget", "-q", "-O", image, buf, NULL };
 
-    ENTER;
     cs = g_checksum_new(G_CHECKSUM_MD5);
     XCG(p->xc, "gravataremail", &gravatar, str);
     g_checksum_update(cs, (guchar *) gravatar, -1);
@@ -81,7 +79,7 @@ fetch_gravatar(gpointer data)
     DBG("gravatar '%s'\n", buf);
     c->pid = run_app_argv(argv);
     c->sid = g_child_watch_add(c->pid, fetch_gravatar_done, data);
-    RET(FALSE);
+    return FALSE;
 }
 
 
@@ -93,21 +91,20 @@ user_constructor(plugin_instance *p)
     gchar *icon = NULL;
     gchar *gravatar = NULL;
 
-    ENTER;
     if (!(k = class_get("menu")))
-        RET(0);
+        return 0;
     XCG(p->xc, "image", &image, str);
     XCG(p->xc, "icon", &icon, str);
     if (!(image || icon))
         XCS(p->xc, "icon", "avatar-default", value);
     if (!PLUGIN_CLASS(k)->constructor(p))
-        RET(0);
+        return 0;
     XCG(p->xc, "gravataremail", &gravatar, str);
     DBG("gravatar email '%s'\n", gravatar);
     if (gravatar)
         g_timeout_add(300, fetch_gravatar, p);
     gtk_widget_set_tooltip_markup(p->pwid, "<b>User</b>");
-    RET(1);
+    return 1;
 }
 
 
@@ -116,14 +113,13 @@ user_destructor(plugin_instance *p)
 {
     user_priv *c G_GNUC_UNUSED = (user_priv *) p;
 
-    ENTER;
     PLUGIN_CLASS(k)->destructor(p);
     if (c->pid)
         kill(c->pid, SIGKILL);
     if (c->sid)
         g_source_remove(c->sid);
     class_put("menu");
-    RET();
+    return;
 }
 
 

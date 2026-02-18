@@ -150,7 +150,6 @@ net_get_load(net_priv *c)
     float total[2];
     char buf[256];
 
-    ENTER;
     memset(&net, 0, sizeof(net));
     memset(&net_diff, 0, sizeof(net_diff));
     memset(&total, 0, sizeof(total));
@@ -171,7 +170,7 @@ end:
     g_snprintf(buf, sizeof(buf), "<b>%s:</b>\nD %lu Kbs, U %lu Kbs",
         c->iface, net_diff.rx, net_diff.tx);
     gtk_widget_set_tooltip_markup(((plugin_instance *)c)->pwid, buf);
-    RET(TRUE);
+    return TRUE;
 }
 
 static int
@@ -180,9 +179,9 @@ net_constructor(plugin_instance *p)
     net_priv *c;
 
     if (!(k = class_get("chart")))
-        RET(0);
+        return 0;
     if (!PLUGIN_CLASS(k)->constructor(p))
-        RET(0);
+        return 0;
     c = (net_priv *) p;
 
     c->iface = "eth0";
@@ -204,7 +203,7 @@ net_constructor(plugin_instance *p)
     net_get_load(c);
     c->timer = g_timeout_add(CHECK_PERIOD * 1000,
         (GSourceFunc) net_get_load, (gpointer) c);
-    RET(1);
+    return 1;
 }
 
 
@@ -213,12 +212,11 @@ net_destructor(plugin_instance *p)
 {
     net_priv *c = (net_priv *) p;
 
-    ENTER;
     if (c->timer)
         g_source_remove(c->timer);
     PLUGIN_CLASS(k)->destructor(p);
     class_put("chart");
-    RET();
+    return;
 }
 
 

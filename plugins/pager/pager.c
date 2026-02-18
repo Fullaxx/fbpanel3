@@ -175,7 +175,6 @@ task_get_sizepos(task *t)
     guint dummy;
     XWindowAttributes win_attributes;
 
-    ENTER;
     if (!XGetWindowAttributes(GDK_DPY, t->win, &win_attributes)) {
         if (!XGetGeometry (GDK_DPY, t->win, &root, &t->x, &t->y, &t->w, &t->h,
                   &dummy, &dummy)) {
@@ -193,7 +192,7 @@ task_get_sizepos(task *t)
         t->h = win_attributes.height;
         DBG("win=0x%lx WxH=%dx%d\n", t->win,t->w, t->h);
     }
-    RET();
+    return;
 }
 
 
@@ -206,14 +205,13 @@ task_update_pix(task *t, desk *d)
     GtkStyleContext *ctx;
     GdkRGBA fg_sel, fg_norm, bg_sel, bg_norm;
 
-    ENTER;
     g_return_if_fail(d->pix != NULL);
     if (!TASK_VISIBLE(t))
-        RET();
+        return;
 
     if (t->desktop < d->pg->desknum &&
           t->desktop != d->no)
-        RET();
+        return;
 
     x = (gfloat)t->x * d->scalew;
     y = (gfloat)t->y * d->scaleh;
@@ -221,7 +219,7 @@ task_update_pix(task *t, desk *d)
     //h = (gfloat)t->h * d->scaleh;
     h = (t->nws.shaded) ? 3 : (gfloat)t->h * d->scaleh;
     if (w < 3 || h < 3)
-        RET();
+        return;
     widget = GTK_WIDGET(d->da);
 
     ctx = gtk_widget_get_style_context(widget);
@@ -289,7 +287,7 @@ task_update_pix(task *t, desk *d)
         if (!noscale && t->pixbuf != NULL)
             g_object_unref(scaled);
     }
-    RET();
+    return;
 }
 
 
@@ -305,10 +303,9 @@ desk_clear_pixmap(desk *d)
     cairo_t *cr;
     GtkAllocation alloc;
 
-    ENTER;
     DBG("d->no=%d\n", d->no);
     if (!d->pix)
-        RET();
+        return;
     widget = GTK_WIDGET(d->da);
     gtk_widget_get_allocation(widget, &alloc);
     ctx = gtk_widget_get_style_context(widget);
@@ -346,7 +343,7 @@ desk_clear_pixmap(desk *d)
         cairo_stroke(cr);
         cairo_destroy(cr);
     }
-    RET();
+    return;
 }
 
 
@@ -354,8 +351,7 @@ static void
 desk_draw_bg(pager_priv *pg, desk *d1)
 {
     /* Wallpaper rendering not supported in GTK3 port */
-    ENTER;
-    RET();
+    return;
 }
 
 
@@ -363,40 +359,36 @@ desk_draw_bg(pager_priv *pg, desk *d1)
 static inline void
 desk_set_dirty(desk *d)
 {
-    ENTER;
     d->dirty = 1;
     gtk_widget_queue_draw(d->da);
-    RET();
+    return;
 }
 
 static inline void
 desk_set_dirty_all(pager_priv *pg)
 {
     int i;
-    ENTER;
     for (i = 0; i < pg->desknum; i++)
         desk_set_dirty(pg->desks[i]);
-    RET();
+    return;
 }
 
 static inline void
 desk_set_dirty_by_win(pager_priv *p, task *t)
 {
-    ENTER;
     if (t->nws.skip_pager || t->nwwt.desktop /*|| t->nwwt.dock || t->nwwt.splash*/ )
-        RET();
+        return;
     if (t->desktop < p->desknum)
         desk_set_dirty(p->desks[t->desktop]);
     else
         desk_set_dirty_all(p);
-    RET();
+    return;
 }
 
 /* Redraw the screen from the backing pixmap */
 static gint
 desk_draw_event (GtkWidget *widget, cairo_t *cr, desk *d)
 {
-    ENTER;
     DBG("d->no=%d\n", d->no);
 
     if (d->dirty) {
@@ -416,7 +408,7 @@ desk_draw_event (GtkWidget *widget, cairo_t *cr, desk *d)
         cairo_set_source_surface(cr, d->pix, 0, 0);
         cairo_paint(cr);
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 
@@ -427,7 +419,6 @@ desk_configure_event (GtkWidget *widget, GdkEventConfigure *event, desk *d)
     int w, h;
     GtkAllocation alloc;
 
-    ENTER;
     gtk_widget_get_allocation(widget, &alloc);
     w = alloc.width;
     h = alloc.height;
@@ -450,20 +441,19 @@ desk_configure_event (GtkWidget *widget, GdkEventConfigure *event, desk *d)
         d->scaleh = (gfloat)w / (gfloat)geom.width;
     }
     desk_set_dirty(d);
-    RET(FALSE);
+    return FALSE;
 }
 
 static gint
 desk_button_press_event(GtkWidget * widget, GdkEventButton * event, desk *d)
 {
-    ENTER;
     if (event->type == GDK_BUTTON_PRESS && event->button == 3
           && event->state & GDK_CONTROL_MASK) {
-        RET(FALSE);
+        return FALSE;
     }
     DBG("s=%d\n", d->no);
     Xclimsg(GDK_ROOT_WINDOW(), a_NET_CURRENT_DESKTOP, d->no, 0, 0, 0, 0);
-    RET(TRUE);
+    return TRUE;
 }
 
 static void
@@ -471,7 +461,6 @@ desk_new(pager_priv *pg, int i)
 {
     desk *d;
 
-    ENTER;
     g_assert(i < pg->desknum);
     d = pg->desks[i] = g_new0(desk, 1);
     d->pg = pg;
@@ -493,7 +482,7 @@ desk_new(pager_priv *pg, int i)
     g_signal_connect (G_OBJECT (d->da), "button_press_event",
          (GCallback) desk_button_press_event, (gpointer)d);
     gtk_widget_show_all(d->da);
-    RET();
+    return;
 }
 
 static void
@@ -501,7 +490,6 @@ desk_free(pager_priv *pg, int i)
 {
     desk *d;
 
-    ENTER;
     d = pg->desks[i];
     DBG("i=%d d->no=%d d->da=%p d->pix=%p\n",
           i, d->no, d->da, d->pix);
@@ -511,7 +499,7 @@ desk_free(pager_priv *pg, int i)
         cairo_surface_destroy(d->gpix);
     gtk_widget_destroy(d->da);
     g_free(d);
-    RET();
+    return;
 }
 
 
@@ -531,10 +519,9 @@ _wnck_gdk_pixbuf_get_from_pixmap (GdkPixbuf   *dest,
 {
     /* GTK3: gdk_pixbuf_get_from_drawable is removed.
      * Return NULL - icon loading from X pixmaps not supported. */
-    ENTER;
     (void)dest; (void)xpixmap; (void)src_x; (void)src_y;
     (void)dest_x; (void)dest_y; (void)width; (void)height;
-    RET(NULL);
+    return NULL;
 }
 
 static GdkPixbuf*
@@ -549,7 +536,6 @@ apply_mask (GdkPixbuf *pixbuf,
   int src_stride;
   int dest_stride;
 
-  ENTER;
   w = MIN (gdk_pixbuf_get_width (mask), gdk_pixbuf_get_width (pixbuf));
   h = MIN (gdk_pixbuf_get_height (mask), gdk_pixbuf_get_height (pixbuf));
 
@@ -584,15 +570,14 @@ apply_mask (GdkPixbuf *pixbuf,
       ++i;
     }
 
-  RET(with_alpha);
+  return with_alpha;
 }
 
 static void
 free_pixels (guchar *pixels, gpointer data)
 {
-    ENTER;
     g_free (pixels);
-    RET();
+    return;
 }
 
 static guchar *
@@ -601,10 +586,9 @@ argbdata_to_pixdata (gulong *argb_data, int len)
     guchar *p, *ret;
     int i;
 
-    ENTER;
     ret = p = g_new (guchar, len * 4);
     if (!ret)
-        RET(NULL);
+        return NULL;
     /* One could speed this up a lot. */
     i = 0;
     while (i < len) {
@@ -625,7 +609,7 @@ argbdata_to_pixdata (gulong *argb_data, int len)
       
         ++i;
     }
-    RET(ret);
+    return ret;
 }
 
 static GdkPixbuf *
@@ -638,10 +622,9 @@ get_netwm_icon(Window tkwin, int iw, int ih)
     GdkPixbuf *src;
     int w, h;
 
-    ENTER;
     data = get_xaproperty(tkwin, a_NET_WM_ICON, XA_CARDINAL, &n);
     if (!data)
-        RET(NULL);
+        return NULL;
 
     /* loop through all icons in data to find best fit */
     if (0) {
@@ -701,7 +684,7 @@ get_netwm_icon(Window tkwin, int iw, int ih)
 
 out:
     XFree(data);
-    RET(ret);
+    return ret;
 }
 
 static GdkPixbuf*
@@ -714,11 +697,10 @@ get_wm_icon(Window tkwin, int iw, int ih)
     int sd;
     GdkPixbuf *ret, *masked, *pixmap, *mask = NULL;
 
-    ENTER;
     hints = XGetWMHints(GDK_DPY, tkwin);
     DBG("\nwm_hints %s\n", hints ? "ok" : "failed");
     if (!hints)
-        RET(NULL);
+        return NULL;
 
     if ((hints->flags & IconPixmapHint))
         xpixmap = hints->icon_pixmap;
@@ -728,17 +710,17 @@ get_wm_icon(Window tkwin, int iw, int ih)
          (hints->flags & IconMaskHint),  xmask);
     XFree(hints);
     if (xpixmap == None)
-        RET(NULL);
+        return NULL;
 
     if (!XGetGeometry (GDK_DPY, xpixmap, &win, &sd, &sd, &w, &h,
               (guint *)&sd, (guint *)&sd)) {
         DBG("XGetGeometry failed for %x pixmap\n", (unsigned int)xpixmap);
-        RET(NULL);
+        return NULL;
     }
     DBG("tkwin=%x icon pixmap w=%d h=%d\n", tkwin, w, h);
     pixmap = _wnck_gdk_pixbuf_get_from_pixmap (NULL, xpixmap, 0, 0, 0, 0, w, h);
     if (!pixmap)
-        RET(NULL);
+        return NULL;
     if (xmask != None && XGetGeometry (GDK_DPY, xmask,
               &win, &sd, &sd, &w, &h, (guint *)&sd, (guint *)&sd)) {
         mask = _wnck_gdk_pixbuf_get_from_pixmap (NULL, xmask, 0, 0, 0, 0, w, h);
@@ -751,11 +733,11 @@ get_wm_icon(Window tkwin, int iw, int ih)
         }
     }
     if (!pixmap)
-        RET(NULL);
+        return NULL;
     ret = gdk_pixbuf_scale_simple (pixmap, iw, ih, GDK_INTERP_TILES);
     g_object_unref(pixmap);
 
-    RET(ret);
+    return ret;
 }
 
 
@@ -769,7 +751,6 @@ do_net_active_window(FbEv *ev, pager_priv *p)
     Window *fwin;
     task *t;
 
-    ENTER;
     fwin = get_xaproperty(GDK_ROOT_WINDOW(), a_NET_ACTIVE_WINDOW, XA_WINDOW, 0);
     DBG("win=%lx\n", fwin ? *fwin : 0);
     if (fwin) {
@@ -788,13 +769,12 @@ do_net_active_window(FbEv *ev, pager_priv *p)
             p->focusedtask = NULL;
         }
     }
-    RET();
+    return;
 }
 
 static void
 do_net_current_desktop(FbEv *ev, pager_priv *pg)
 {
-    ENTER;
     desk_set_dirty(pg->desks[pg->curdesk]);
     gtk_widget_set_state_flags(pg->desks[pg->curdesk]->da, GTK_STATE_FLAG_NORMAL, TRUE);
     pg->curdesk =  get_net_current_desktop ();
@@ -802,7 +782,7 @@ do_net_current_desktop(FbEv *ev, pager_priv *pg)
         pg->curdesk = 0;
     desk_set_dirty(pg->desks[pg->curdesk]);
     gtk_widget_set_state_flags(pg->desks[pg->curdesk]->da, GTK_STATE_FLAG_SELECTED, TRUE);
-    RET();
+    return;
 }
 
 
@@ -812,13 +792,12 @@ do_net_client_list_stacking(FbEv *ev, pager_priv *p)
     int i;
     task *t;
 
-    ENTER;
     if (p->wins)
         XFree(p->wins);
     p->wins = get_xaproperty (GDK_ROOT_WINDOW(), a_NET_CLIENT_LIST_STACKING,
           XA_WINDOW, &p->winnum);
     if (!p->wins || !p->winnum)
-        RET();
+        return;
 
     /* refresh existing tasks and add new */
     for (i = 0; i < p->winnum; i++) {
@@ -850,7 +829,7 @@ do_net_client_list_stacking(FbEv *ev, pager_priv *p)
     }
     /* pass throu hash table and delete stale windows */
     g_hash_table_foreach_remove(p->htable, (GHRFunc) task_remove_stale, (gpointer)p);
-    RET();
+    return;
 }
 
 
@@ -864,12 +843,12 @@ pager_unmapnotify(pager_priv *p, XEvent *ev)
     Window win = ev->xunmap.window;
     task *t;
     if (!(t = g_hash_table_lookup(p->htable, &win)))
-        RET();
+        return;
     DBG("pager_unmapnotify: win=0x%x\n", win);
-    RET();
+    return;
     t->ws = WithdrawnState;
     desk_set_dirty_by_win(p, t);
-    RET();
+    return;
 }
 */
 static void
@@ -878,14 +857,13 @@ pager_configurenotify(pager_priv *p, XEvent *ev)
     Window win = ev->xconfigure.window;
     task *t;
 
-    ENTER;
 
     if (!(t = g_hash_table_lookup(p->htable, &win)))
-        RET();
+        return;
     DBG("win=0x%lx\n", win);
     task_get_sizepos(t);
     desk_set_dirty_by_win(p, t);
-    RET();
+    return;
 }
 
 static void
@@ -896,9 +874,8 @@ pager_propertynotify(pager_priv *p, XEvent *ev)
     task *t;
 
 
-    ENTER;
     if ((win == GDK_ROOT_WINDOW()) || !(t = g_hash_table_lookup(p->htable, &win)))
-        RET();
+        return;
 
     DBG("window=0x%lx\n", t->win);
     if (at == a_NET_WM_STATE) {
@@ -909,68 +886,33 @@ pager_propertynotify(pager_priv *p, XEvent *ev)
         desk_set_dirty_by_win(p, t); // to clean up desks where this task was
         t->desktop = get_net_wm_desktop(t->win);
     } else {
-        RET();
+        return;
     }
     desk_set_dirty_by_win(p, t);
-    RET();
+    return;
 }
 
 static GdkFilterReturn
 pager_event_filter( XEvent *xev, GdkEvent *event, pager_priv *pg)
 {
-    ENTER;
     if (xev->type == PropertyNotify )
         pager_propertynotify(pg, xev);
     else if (xev->type == ConfigureNotify )
         pager_configurenotify(pg, xev);
-    RET(GDK_FILTER_CONTINUE);
+    return GDK_FILTER_CONTINUE;
 }
-#if 0
-static void
-pager_paint_frame(pager_priv *pg, gint no, GtkStateType state)
-{
-    gint x, y, w, h, border;
-
-    ENTER;
-    RET();
-    border = gtk_container_get_border_width(GTK_CONTAINER(pg->box));
-    w = pg->box->allocation.width;
-    h = pg->desks[0]->da->allocation.height + border;
-    x = 0;
-    y = h * no;
-    h += border;
-    DBG("%d: %d %d %d %d\n", no, x, y, w, h);
-    gtk_paint_flat_box(pg->box->style, pg->box->window,
-          state,
-          GTK_SHADOW_NONE,
-          NULL, pg->box, "box",
-          x + 1, y + 1,w, h);
-    RET();
-
-}
-
-static gint
-pager_expose_event (GtkWidget *widget, GdkEventExpose *event, pager_priv *pg)
-{
-    ENTER;
-    DBG("curdesk=%d\n",  pg->curdesk);
-    pager_paint_frame(pg, pg->curdesk, GTK_STATE_SELECTED);
-    RET(TRUE);
-}
-#endif
 
 static void
 pager_bg_changed(FbBg *bg, pager_priv *pg)
 {
     int i;
 
-    ENTER;
     for (i = 0; i < pg->desknum; i++) {
         desk *d = pg->desks[i];
         desk_draw_bg(pg, d);
         desk_set_dirty(d);
     }
-    RET();
+    return;
 }
 
 
@@ -980,7 +922,6 @@ pager_rebuild_all(FbEv *ev, pager_priv *pg)
     int desknum, dif, i;
     int curdesk G_GNUC_UNUSED;
 
-    ENTER;
     desknum = pg->desknum;
     curdesk = pg->curdesk;
 
@@ -999,7 +940,7 @@ pager_rebuild_all(FbEv *ev, pager_priv *pg)
     dif = pg->desknum - desknum;
 
     if (dif == 0)
-        RET();
+        return;
 
     if (dif < 0) {
         /* if desktops were deleted then delete their maps also */
@@ -1013,7 +954,7 @@ pager_rebuild_all(FbEv *ev, pager_priv *pg)
     do_net_current_desktop(NULL, pg);
     do_net_client_list_stacking(NULL, pg);
 
-    RET();
+    return;
 }
 
 #define BORDER 1
@@ -1022,7 +963,6 @@ pager_constructor(plugin_instance *plug)
 {
     pager_priv *pg;
 
-    ENTER;
     pg = (pager_priv *) plug;
 
 #ifdef EXTRA_DEBUG
@@ -1077,7 +1017,7 @@ pager_constructor(plugin_instance *plug)
           G_CALLBACK (pager_rebuild_all), (gpointer) pg);
     g_signal_connect (G_OBJECT (fbev), "client_list_stacking",
           G_CALLBACK (do_net_client_list_stacking), (gpointer) pg);
-    RET(1);
+    return 1;
 }
 
 static void
@@ -1085,7 +1025,6 @@ pager_destructor(plugin_instance *p)
 {
     pager_priv *pg = (pager_priv *)p;
 
-    ENTER;
     g_signal_handlers_disconnect_by_func(G_OBJECT (fbev),
             do_net_current_desktop, pg);
     g_signal_handlers_disconnect_by_func(G_OBJECT (fbev),
@@ -1110,7 +1049,7 @@ pager_destructor(plugin_instance *p)
     }
     if (pg->wins)
         XFree(pg->wins);
-    RET();
+    return;
 }
 
 

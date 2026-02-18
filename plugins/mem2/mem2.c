@@ -107,7 +107,7 @@ mem_usage(mem2_priv *c)
 
     k->add_tick(&c->chart, total_r);
     gtk_widget_set_tooltip_markup(((plugin_instance *)c)->pwid, buf);
-    RET(TRUE);
+    return TRUE;
 
 }
 #else
@@ -124,9 +124,9 @@ mem2_constructor(plugin_instance *p)
     mem2_priv *c;
 
     if (!(k = class_get("chart")))
-        RET(0);
+        return 0;
     if (!PLUGIN_CLASS(k)->constructor(p))
-        RET(0);
+        return 0;
     c = (mem2_priv *) p;
 
     c->colors[0] = "red";
@@ -144,7 +144,7 @@ mem2_constructor(plugin_instance *p)
     mem_usage(c);
     c->timer = g_timeout_add(CHECK_PERIOD * 1000,
         (GSourceFunc) mem_usage, (gpointer) c);
-    RET(1);
+    return 1;
 }
 
 
@@ -153,12 +153,11 @@ mem2_destructor(plugin_instance *p)
 {
     mem2_priv *c = (mem2_priv *) p;
 
-    ENTER;
     if (c->timer)
         g_source_remove(c->timer);
     PLUGIN_CLASS(k)->destructor(p);
     class_put("chart");
-    RET();
+    return;
 }
 
 

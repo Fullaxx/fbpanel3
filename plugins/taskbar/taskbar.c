@@ -126,7 +126,6 @@ static void tk_raise_window( task *tk, guint32 time );
 static int
 task_visible(taskbar_priv *tb, task *tk)
 {
-    ENTER;
     DBG("%lx: desktop=%d iconified=%d \n", tk->win, tk->desktop, tk->iconified);
     RET( (tb->show_all_desks || tk->desktop == -1
             || (tk->desktop == tb->cur_desk))
@@ -137,23 +136,21 @@ task_visible(taskbar_priv *tb, task *tk)
 inline static int
 accept_net_wm_state(net_wm_state *nws, int accept_skip_pager)
 {
-    ENTER;
     DBG("accept_skip_pager=%d  skip_taskbar=%d skip_pager=%d\n",
         accept_skip_pager,
         nws->skip_taskbar,
         nws->skip_pager);
 
-    RET(!(nws->skip_taskbar || (accept_skip_pager && nws->skip_pager)));
+    return !(nws->skip_taskbar || (accept_skip_pager && nws->skip_pager));
 }
 
 inline static int
 accept_net_wm_window_type(net_wm_window_type *nwwt)
 {
-    ENTER;
     DBG("desktop=%d dock=%d splash=%d\n",
         nwwt->desktop, nwwt->dock, nwwt->splash);
 
-    RET(!(nwwt->desktop || nwwt->dock || nwwt->splash));
+    return !(nwwt->desktop || nwwt->dock || nwwt->splash);
 }
 
 
@@ -161,7 +158,6 @@ accept_net_wm_window_type(net_wm_window_type *nwwt)
 static void
 tk_free_names(task *tk)
 {
-    ENTER;
     if ((!tk->name) != (!tk->iname)) {
         DBG("tk names partially allocated \ntk->name=%s\ntk->iname %s\n",
                 tk->name, tk->iname);
@@ -172,7 +168,7 @@ tk_free_names(task *tk)
         tk->name = tk->iname = NULL;
         tk->tb->alloc_no--;
     }
-    RET();
+    return;
 }
 
 static void
@@ -180,7 +176,6 @@ tk_get_names(task *tk)
 {
     char *name;
 
-    ENTER;
     tk_free_names(tk);
     name = get_utf8_property(tk->win,  a_NET_WM_NAME);
     DBG("a_NET_WM_NAME:%s\n", name);
@@ -194,7 +189,7 @@ tk_get_names(task *tk)
         g_free(name);
         tk->tb->alloc_no++;
     }
-    RET();
+    return;
 }
 
 static void
@@ -202,13 +197,12 @@ tk_set_names(task *tk)
 {
     char *name;
 
-    ENTER;
     name = tk->iconified ? tk->iname : tk->name;
     if (!tk->tb->icons_only)
         gtk_label_set_text(GTK_LABEL(tk->label), name);
     if (tk->tb->tooltips)
         gtk_widget_set_tooltip_text(tk->button, tk->name);
-    RET();
+    return;
 }
 
 
@@ -216,15 +210,13 @@ tk_set_names(task *tk)
 static task *
 find_task (taskbar_priv * tb, Window win)
 {
-    ENTER;
-    RET(g_hash_table_lookup(tb->task_list, &win));
+    return g_hash_table_lookup(tb->task_list, &win);
 }
 
 
 static void
 del_task (taskbar_priv * tb, task *tk, int hdel)
 {
-    ENTER;
     DBG("deleting(%d)  %08x %s\n", hdel, tk->win, tk->name);
     if (tk->flash_timeout)
         g_source_remove(tk->flash_timeout);
@@ -236,7 +228,7 @@ del_task (taskbar_priv * tb, task *tk, int hdel)
     if (hdel)
         g_hash_table_remove(tb->task_list, &tk->win);
     g_free(tk);
-    RET();
+    return;
 }
 
 
@@ -308,7 +300,6 @@ apply_mask (GdkPixbuf *pixbuf,
   int src_stride;
   int dest_stride;
 
-  ENTER;
   w = MIN (gdk_pixbuf_get_width (mask), gdk_pixbuf_get_width (pixbuf));
   h = MIN (gdk_pixbuf_get_height (mask), gdk_pixbuf_get_height (pixbuf));
 
@@ -343,16 +334,15 @@ apply_mask (GdkPixbuf *pixbuf,
       ++i;
     }
 
-  RET(with_alpha);
+  return with_alpha;
 }
 
 
 static void
 free_pixels (guchar *pixels, gpointer data)
 {
-    ENTER;
     g_free (pixels);
-    RET();
+    return;
 }
 
 
@@ -362,10 +352,9 @@ argbdata_to_pixdata (gulong *argb_data, int len)
     guchar *p, *ret;
     int i;
 
-    ENTER;
     ret = p = g_new (guchar, len * 4);
     if (!ret)
-        RET(NULL);
+        return NULL;
     /* One could speed this up a lot. */
     i = 0;
     while (i < len) {
@@ -386,27 +375,9 @@ argbdata_to_pixdata (gulong *argb_data, int len)
 
         ++i;
     }
-    RET(ret);
+    return ret;
 }
 
-#if 0
-GdkPixbuf *
-gdk_pixbuf_scale_ratio(GdkPixbuf *p, int width, int height, GdkInterpType itype)
-{
-    gfloat w, h, rw, rh;
-
-    w = gdk_pixbuf_get_width(p);
-    h = gdk_pixbuf_get_height(p);
-    rw = w / width;
-    rh = h / height;
-    if (rw > rh)
-        height = h / rw;
-    else
-        width =  w / rh;
-    return  gdk_pixbuf_scale_simple(p, width, height, itype);
-
-}
-#endif
 
 
 
@@ -420,10 +391,9 @@ get_netwm_icon(Window tkwin, int iw, int ih)
     GdkPixbuf *src;
     int w, h;
 
-    ENTER;
     data = get_xaproperty(tkwin, a_NET_WM_ICON, XA_CARDINAL, &n);
     if (!data)
-        RET(NULL);
+        return NULL;
 
     /* loop through all icons in data to find best fit */
     if (0) {
@@ -483,7 +453,7 @@ get_netwm_icon(Window tkwin, int iw, int ih)
 
 out:
     XFree(data);
-    RET(ret);
+    return ret;
 }
 
 static GdkPixbuf *
@@ -496,11 +466,10 @@ get_wm_icon(Window tkwin, int iw, int ih)
     int sd;
     GdkPixbuf *ret, *masked, *pixmap, *mask = NULL;
 
-    ENTER;
     hints = XGetWMHints(GDK_DPY, tkwin);
     DBG("\nwm_hints %s\n", hints ? "ok" : "failed");
     if (!hints)
-        RET(NULL);
+        return NULL;
 
     if ((hints->flags & IconPixmapHint))
         xpixmap = hints->icon_pixmap;
@@ -511,17 +480,17 @@ get_wm_icon(Window tkwin, int iw, int ih)
         (hints->flags & IconMaskHint),  xmask);
     XFree(hints);
     if (xpixmap == None)
-        RET(NULL);
+        return NULL;
 
     if (!XGetGeometry (GDK_DPY, xpixmap, &win, &sd, &sd, &w, &h,
               (guint *)&sd, (guint *)&sd)) {
         DBG("XGetGeometry failed for %x pixmap\n", (unsigned int)xpixmap);
-        RET(NULL);
+        return NULL;
     }
     DBG("tkwin=%x icon pixmap w=%d h=%d\n", tkwin, w, h);
     pixmap = _wnck_gdk_pixbuf_get_from_pixmap (NULL, xpixmap, 0, 0, 0, 0, w, h);
     if (!pixmap)
-        RET(NULL);
+        return NULL;
     if (xmask != None && XGetGeometry (GDK_DPY, xmask,
               &win, &sd, &sd, &w, &h, (guint *)&sd, (guint *)&sd)) {
         mask = _wnck_gdk_pixbuf_get_from_pixmap (NULL, xmask, 0, 0, 0, 0, w, h);
@@ -534,19 +503,18 @@ get_wm_icon(Window tkwin, int iw, int ih)
         }
     }
     if (!pixmap)
-        RET(NULL);
+        return NULL;
     ret = gdk_pixbuf_scale_simple (pixmap, iw, ih, GDK_INTERP_TILES);
     g_object_unref(pixmap);
 
-    RET(ret);
+    return ret;
 }
 
 inline static GdkPixbuf*
 get_generic_icon(taskbar_priv *tb)
 {
-    ENTER;
     g_object_ref(tb->gen_pixbuf);
-    RET(tb->gen_pixbuf);
+    return tb->gen_pixbuf;
 }
 
 static void
@@ -554,7 +522,6 @@ tk_update_icon (taskbar_priv *tb, task *tk, Atom a)
 {
     GdkPixbuf *pixbuf;
 
-    ENTER;
     DBG("%lx: ", tk->win);
     pixbuf = tk->pixbuf;
     if (a == a_NET_WM_ICON || a == None) {
@@ -576,7 +543,7 @@ tk_update_icon (taskbar_priv *tb, task *tk, Atom a)
     }
     DBGE(" %dx%d \n", gdk_pixbuf_get_width(tk->pixbuf),
         gdk_pixbuf_get_height(tk->pixbuf));
-    RET();
+    return;
 }
 
 static gboolean
@@ -633,20 +600,18 @@ tk_raise_window( task *tk, guint32 time )
 static void
 tk_callback_leave( GtkWidget *widget, task *tk)
 {
-    ENTER;
     gtk_widget_set_state_flags(widget,
           (tk->focused) ? tk->tb->focused_state : tk->tb->normal_state, TRUE);
-    RET();
+    return;
 }
 
 
 static void
 tk_callback_enter( GtkWidget *widget, task *tk )
 {
-    ENTER;
     gtk_widget_set_state_flags(widget,
           (tk->focused) ? tk->tb->focused_state : tk->tb->normal_state, TRUE);
-    RET();
+    return;
 }
 
 static gboolean
@@ -684,47 +649,10 @@ tk_callback_drag_leave (GtkWidget *widget,
     return;
 }
 
-#if 0
-static gboolean
-tk_callback_expose(GtkWidget *widget, GdkEventExpose *event, task *tk)
-{
-    GtkStateType state;
-    ENTER;
-    state = (tk->focused) ? tk->tb->focused_state : tk->tb->normal_state;
-    if (GTK_WIDGET_STATE(widget) != state) {
-        gtk_widget_set_state(widget, state);
-        gtk_widget_queue_draw(widget);
-    } else {
-        if( ! tk->flash || 0 == tk->flash_state ) {
-            gtk_paint_box (widget->style, widget->window,
-                  state,
-                  (tk->focused) ? GTK_SHADOW_IN : GTK_SHADOW_OUT,
-                  &event->area, widget, "button",
-                  widget->allocation.x, widget->allocation.y,
-                  widget->allocation.width, widget->allocation.height);
-        } else {
-            gdk_draw_rectangle( widget->window,
-                                widget->style->bg_gc[GTK_STATE_SELECTED],
-                                TRUE, 0, 0,
-                                widget->allocation.width,
-                                widget->allocation.height );
-        }
-        /*
-        _gtk_button_paint(GTK_BUTTON(widget), &event->area, state,
-              (tk->focused) ? GTK_SHADOW_IN : GTK_SHADOW_OUT,
-              "button",  "buttondefault");
-        */
-        gtk_container_propagate_expose(GTK_CONTAINER(widget),
-            GTK_BIN(widget)->child, event);
-    }
-    RET(FALSE);
-}
-#endif
 
 static gint
 tk_callback_scroll_event (GtkWidget *widget, GdkEventScroll *event, task *tk)
 {
-    ENTER;
     if (event->direction == GDK_SCROLL_UP) {
         GdkWindow *gdkwindow;
 
@@ -742,7 +670,7 @@ tk_callback_scroll_event (GtkWidget *widget, GdkEventScroll *event, task *tk)
     }
 
     XSync (GDK_DPY, False);
-    RET(TRUE);
+    return TRUE;
 }
 
 
@@ -750,14 +678,13 @@ static gboolean
 tk_callback_button_press_event(GtkWidget *widget, GdkEventButton *event,
     task *tk)
 {
-    ENTER;
     if (event->type == GDK_BUTTON_PRESS && event->button == 3
           && event->state & GDK_CONTROL_MASK) {
         tk->tb->discard_release_event = 1;
         gtk_propagate_event(tk->tb->bar, (GdkEvent *)event);
-        RET(TRUE);
+        return TRUE;
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 
@@ -765,11 +692,10 @@ static gboolean
 tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
     task *tk)
 {
-    ENTER;
 
     if (event->type == GDK_BUTTON_RELEASE && tk->tb->discard_release_event) {
         tk->tb->discard_release_event = 0;
-        RET(TRUE);
+        return TRUE;
     }
     {
         GtkAllocation alloc;
@@ -777,7 +703,7 @@ tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
         if ((event->type != GDK_BUTTON_RELEASE) ||
             (event->x < 0 || event->x >= alloc.width ||
              event->y < 0 || event->y >= alloc.height))
-            RET(FALSE);
+            return FALSE;
     }
     DBG("win=%x\n", tk->win);
     if (event->button == 1) {
@@ -821,14 +747,13 @@ tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
 
     }
     XSync (GDK_DPY, False);
-    RET(TRUE);
+    return TRUE;
 }
 
 
 static void
 tk_update(gpointer key, task *tk, taskbar_priv *tb)
 {
-    ENTER;
     g_assert ((tb != NULL) && (tk != NULL));
     if (task_visible(tb, tk)) {
         gtk_widget_set_state_flags(tk->button,
@@ -840,27 +765,25 @@ tk_update(gpointer key, task *tk, taskbar_priv *tb)
         if (tb->tooltips) {
             gtk_widget_set_tooltip_text(tk->button, tk->name);
         }
-        RET();
+        return;
     }
     gtk_widget_hide(tk->button);
-    RET();
+    return;
 }
 
 static void
 tk_display(taskbar_priv *tb, task *tk)
 {
-    ENTER;
     tk_update(NULL, tk, tb);
-    RET();
+    return;
 }
 
 static void
 tb_display(taskbar_priv *tb)
 {
-    ENTER;
     if (tb->wins)
         g_hash_table_foreach(tb->task_list, (GHFunc) tk_update, (gpointer) tb);
-    RET();
+    return;
 
 }
 
@@ -869,7 +792,6 @@ tk_build_gui(taskbar_priv *tb, task *tk)
 {
     GtkWidget *w1;
 
-    ENTER;
     g_assert ((tb != NULL) && (tk != NULL));
 
     /* NOTE
@@ -937,28 +859,26 @@ tk_build_gui(taskbar_priv *tb, task *tk)
         /* Flash button for window with urgency hint */
         tk_flash_window(tk);
     }
-    RET();
+    return;
 }
 
 static gboolean
 task_remove_every(Window *win, task *tk)
 {
-    ENTER;
     del_task(tk->tb, tk, 0);
-    RET(TRUE);
+    return TRUE;
 }
 
 /* tell to remove element with zero refcount */
 static gboolean
 task_remove_stale(Window *win, task *tk, gpointer data)
 {
-    ENTER;
     if (tk->refcount-- == 0) {
         //DBG("tb_net_list <del>: 0x%x %s\n", tk->win, tk->name);
         del_task(tk->tb, tk, 0);
-        RET(TRUE);
+        return TRUE;
     }
-    RET(FALSE);
+    return FALSE;
 }
 
 /*****************************************************
@@ -972,13 +892,12 @@ tb_net_client_list(GtkWidget *widget, taskbar_priv *tb)
     int i;
     task *tk;
 
-    ENTER;
     if (tb->wins)
         XFree(tb->wins);
     tb->wins = get_xaproperty (GDK_ROOT_WINDOW(),
         a_NET_CLIENT_LIST, XA_WINDOW, &tb->win_num);
     if (!tb->wins)
-        RET();
+        return;
     for (i = 0; i < tb->win_num; i++) {
         if ((tk = g_hash_table_lookup(tb->task_list, &tb->wins[i]))) {
             tk->refcount++;
@@ -1020,7 +939,7 @@ tb_net_client_list(GtkWidget *widget, taskbar_priv *tb)
     g_hash_table_foreach_remove(tb->task_list, (GHRFunc) task_remove_stale,
         NULL);
     tb_display(tb);
-    RET();
+    return;
 }
 
 
@@ -1028,20 +947,18 @@ tb_net_client_list(GtkWidget *widget, taskbar_priv *tb)
 static void
 tb_net_current_desktop(GtkWidget *widget, taskbar_priv *tb)
 {
-    ENTER;
     tb->cur_desk = get_net_current_desktop();
     tb_display(tb);
-    RET();
+    return;
 }
 
 
 static void
 tb_net_number_of_desktops(GtkWidget *widget, taskbar_priv *tb)
 {
-    ENTER;
     tb->desk_num = get_net_number_of_desktops();
     tb_display(tb);
-    RET();
+    return;
 }
 
 
@@ -1054,7 +971,6 @@ tb_net_active_window(GtkWidget *widget, taskbar_priv *tb)
     task *ntk, *ctk;
     int drop_old, make_new;
 
-    ENTER;
     g_assert (tb != NULL);
     drop_old = make_new = 0;
     ctk = tb->focused;
@@ -1092,7 +1008,7 @@ tb_net_active_window(GtkWidget *widget, taskbar_priv *tb)
         tk_display(tb, ntk);
         DBG("new focus was set\n");
     }
-    RET();
+    return;
 }
 
 /* For older Xlib headers */
@@ -1121,7 +1037,6 @@ tb_propertynotify(taskbar_priv *tb, XEvent *ev)
     Atom at;
     Window win;
 
-    ENTER;
     DBG("win=%x\n", ev->xproperty.window);
     at = ev->xproperty.atom;
     win = ev->xproperty.window;
@@ -1184,52 +1099,48 @@ tb_propertynotify(taskbar_priv *tb, XEvent *ev)
             DBG("at = %d\n", at);
         }
     }
-    RET();
+    return;
 }
 
 static GdkFilterReturn
 tb_event_filter( XEvent *xev, GdkEvent *event, taskbar_priv *tb)
 {
 
-    ENTER;
     //RET(GDK_FILTER_CONTINUE);
     g_assert(tb != NULL);
     if (xev->type == PropertyNotify )
         tb_propertynotify(tb, xev);
-    RET(GDK_FILTER_CONTINUE);
+    return GDK_FILTER_CONTINUE;
 }
 
 static void
 menu_close_window(GtkWidget *widget, taskbar_priv *tb)
 {
-    ENTER;
     DBG("win %x\n", tb->menutask->win);
     XSync (GDK_DPY, 0);
     //XKillClient(GDK_DPY, tb->menutask->win);
     Xclimsgwm(tb->menutask->win, a_WM_PROTOCOLS, a_WM_DELETE_WINDOW);
     XSync (GDK_DPY, 0);
-    RET();
+    return;
 }
 
 
 static void
 menu_raise_window(GtkWidget *widget, taskbar_priv *tb)
 {
-    ENTER;
     DBG("win %x\n", tb->menutask->win);
     XMapRaised(GDK_DPY, tb->menutask->win);
-    RET();
+    return;
 }
 
 
 static void
 menu_iconify_window(GtkWidget *widget, taskbar_priv *tb)
 {
-    ENTER;
     DBG("win %x\n", tb->menutask->win);
     XIconifyWindow (GDK_DPY, tb->menutask->win,
         DefaultScreen(GDK_DPY));
-    RET();
+    return;
 }
 
 static void
@@ -1237,13 +1148,12 @@ send_to_workspace(GtkWidget *widget, void *iii, taskbar_priv *tb)
 {
     int dst_desktop;
 
-    ENTER;
 
     dst_desktop = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "num"));
     DBG("win %x -> %d\n",  (unsigned int)tb->menutask->win, dst_desktop);
     Xclimsg(tb->menutask->win, a_NET_WM_DESKTOP, dst_desktop, 0, 0, 0, 0);
 
-    RET();
+    return;
 }
 
 #define ALL_WORKSPACES  0xFFFFFFFF
@@ -1251,13 +1161,12 @@ send_to_workspace(GtkWidget *widget, void *iii, taskbar_priv *tb)
 static void
 tb_update_desktops_names(taskbar_priv *tb)
 {
-    ENTER;
     tb->desk_namesno = get_net_number_of_desktops();
     if (tb->desk_names)
         g_strfreev(tb->desk_names);
     tb->desk_names = get_utf8_property_list(GDK_ROOT_WINDOW(),
         a_NET_DESKTOP_NAMES, &(tb->desk_namesno));
-    RET();
+    return;
 }
 
 static void
@@ -1267,7 +1176,6 @@ tb_make_menu(GtkWidget *widget, taskbar_priv *tb)
     gchar *buf;
     int i;
 
-    ENTER;
     menu = gtk_menu_new ();
 
     mi = gtk_menu_item_new_with_label(_("Raise"));
@@ -1327,7 +1235,6 @@ taskbar_size_alloc(GtkWidget *widget, GtkAllocation *a,
 {
     int dim;
 
-    ENTER;
     if (tb->plugin.panel->orientation == GTK_ORIENTATION_HORIZONTAL)
         dim = a->height / tb->task_height_max;
     else
@@ -1335,7 +1242,7 @@ taskbar_size_alloc(GtkWidget *widget, GtkAllocation *a,
     DBG("width=%d height=%d task_height_max=%d -> dim=%d\n",
         a->width, a->height, tb->task_height_max, dim);
     gtk_bar_set_dimension(GTK_BAR(tb->bar), dim);
-    RET();
+    return;
 }
 
 static void
@@ -1343,7 +1250,6 @@ taskbar_build_gui(plugin_instance *p)
 {
     taskbar_priv *tb = (taskbar_priv *) p;
 
-    ENTER;
     g_signal_connect(G_OBJECT(p->pwid), "size-allocate",
         (GCallback) taskbar_size_alloc, tb);
 
@@ -1385,7 +1291,7 @@ taskbar_build_gui(plugin_instance *p)
     tb_make_menu(NULL, tb);
     gtk_container_set_border_width(GTK_CONTAINER(p->pwid), 0);
     gtk_widget_show_all(tb->bar);
-    RET();
+    return;
 }
 
 void net_active_detect()
@@ -1413,7 +1319,6 @@ taskbar_constructor(plugin_instance *p)
     GtkRequisition req;
     xconf *xc = p->xc;
 
-    ENTER;
     tb = (taskbar_priv *) p;
     gtk_widget_set_name(p->pwid, "taskbar");
     {
@@ -1471,7 +1376,7 @@ taskbar_constructor(plugin_instance *p)
     tb_net_client_list(NULL, tb);
     tb_display(tb);
     tb_net_active_window(NULL, tb);
-    RET(1);
+    return 1;
 }
 
 
@@ -1480,7 +1385,6 @@ taskbar_destructor(plugin_instance *p)
 {
     taskbar_priv *tb = (taskbar_priv *) p;
 
-    ENTER;
     gdk_window_remove_filter(NULL, (GdkFilterFunc)tb_event_filter, tb);
     g_signal_handlers_disconnect_by_func(G_OBJECT (fbev),
             tb_net_current_desktop, tb);
@@ -1499,7 +1403,7 @@ taskbar_destructor(plugin_instance *p)
     //gtk_widget_destroy(tb->bar); // destroy of p->pwid does it all
     gtk_widget_destroy(tb->menu);
     DBG("alloc_no=%d\n", tb->alloc_no);
-    RET();
+    return;
 }
 
 static plugin_class class = {

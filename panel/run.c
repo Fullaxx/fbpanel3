@@ -1,14 +1,12 @@
 #include "run.h"
-#include "dbg.h"
 
 void
 run_app(gchar *cmd)
 {
     GError *error = NULL;
 
-    ENTER;
     if (!cmd)
-        RET();
+        return;
 
     if (!g_spawn_command_line_async(cmd, &error))
     {
@@ -20,7 +18,7 @@ run_app(gchar *cmd)
         gtk_widget_destroy(dialog);
         g_error_free(error);
     }
-    RET();
+    return;
 }
 
 
@@ -31,7 +29,6 @@ run_app_argv(gchar **argv)
     GSpawnFlags flags = G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH;
     GPid pid;
 
-    ENTER;
     flags |= G_SPAWN_STDOUT_TO_DEV_NULL;
     if (!g_spawn_async(NULL, argv, NULL, flags, NULL, NULL, &pid, &error)) {
         GtkWidget *dialog = gtk_message_dialog_new(NULL, 0,
@@ -43,5 +40,5 @@ run_app_argv(gchar **argv)
         g_error_free(error);
     }
 
-    RET(pid);
+    return pid;
 }

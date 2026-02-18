@@ -50,24 +50,22 @@ oss_get_volume(volume_priv *c)
 {
     int volume;
 
-    ENTER;
     if (ioctl(c->fd, MIXER_READ(c->chan), &volume)) {
         ERR("volume: can't get volume from /dev/mixer\n");
-        RET(0);
+        return 0;
     }
     volume &= 0xFF;
     DBG("volume=%d\n", volume);
-    RET(volume);
+    return volume;
 }
 
 static void
 oss_set_volume(volume_priv *c, int volume)
 {
-    ENTER;
     DBG("volume=%d\n", volume);
     volume = (volume << 8) | volume;
     ioctl(c->fd, MIXER_WRITE(c->chan), &volume);
-    RET();
+    return;
 }
 
 static gboolean
@@ -76,7 +74,6 @@ volume_update_gui(volume_priv *c)
     int volume;
     gchar buf[20];
 
-    ENTER;
     volume = oss_get_volume(c);
     if ((volume != 0) != (c->vol != 0)) {
         if (volume)
@@ -97,18 +94,17 @@ volume_update_gui(volume_priv *c)
         g_signal_handlers_unblock_by_func(G_OBJECT(c->slider),
             G_CALLBACK(slider_changed), c);
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 static void
 slider_changed(GtkRange *range, volume_priv *c)
 {
     int volume = (int) gtk_range_get_value(range);
-    ENTER;
     DBG("value=%d\n", volume);
     oss_set_volume(c, volume);
     volume_update_gui(c);
-    RET();
+    return;
 }
 
 static GtkWidget *
@@ -157,7 +153,6 @@ icon_clicked(GtkWidget *widget, GdkEventButton *event, volume_priv *c)
 {
     int volume;
 
-    ENTER;
     if (event->type == GDK_BUTTON_PRESS && event->button == 1) {
         if (c->slider_window == NULL) {
             c->slider_window = volume_create_slider(c);
@@ -171,10 +166,10 @@ icon_clicked(GtkWidget *widget, GdkEventButton *event, volume_priv *c)
                 c->leave_id = 0;
             }
         }
-        RET(FALSE);
+        return FALSE;
     }
     if (!(event->type == GDK_BUTTON_PRESS && event->button == 2))
-        RET(FALSE);
+        return FALSE;
     
     if (c->muted) {
         volume = c->muted_vol;
@@ -185,7 +180,7 @@ icon_clicked(GtkWidget *widget, GdkEventButton *event, volume_priv *c)
     c->muted = !c->muted;
     oss_set_volume(c, volume);
     volume_update_gui(c);
-    RET(FALSE);
+    return FALSE;
 }
 
 static gboolean
@@ -193,7 +188,6 @@ icon_scrolled(GtkWidget *widget, GdkEventScroll *event, volume_priv *c)
 {
     int volume;
     
-    ENTER;
     volume = (c->muted) ? c->muted_vol : ((meter_priv *) c)->level;
     volume += 2 * ((event->direction == GDK_SCROLL_UP
             || event->direction == GDK_SCROLL_LEFT) ? 1 : -1);
@@ -208,24 +202,22 @@ icon_scrolled(GtkWidget *widget, GdkEventScroll *event, volume_priv *c)
         oss_set_volume(c, volume);
         volume_update_gui(c);
     }
-    RET(TRUE);
+    return TRUE;
 }
 
 static gboolean
 leave_cb(volume_priv *c)
 {
-    ENTER;
     c->leave_id = 0;
     c->has_pointer = 0;
     gtk_widget_destroy(c->slider_window);
     c->slider_window = NULL;
-    RET(FALSE);
+    return FALSE;
 }
 
 static gboolean
 crossed(GtkWidget *widget, GdkEventCrossing *event, volume_priv *c)
 {
-    ENTER;
     if (event->type == GDK_ENTER_NOTIFY)
         c->has_pointer++;
     else
@@ -241,7 +233,7 @@ crossed(GtkWidget *widget, GdkEventCrossing *event, volume_priv *c)
         }
     }
     DBG("has_pointer=%d\n", c->has_pointer);
-    RET(FALSE);
+    return FALSE;
 }
 
 static int
@@ -250,13 +242,13 @@ volume_constructor(plugin_instance *p)
     volume_priv *c;
     
     if (!(k = class_get("meter")))
-        RET(0);
+        return 0;
     if (!PLUGIN_CLASS(k)->constructor(p))
-        RET(0);
+        return 0;
     c = (volume_priv *) p;
     if ((c->fd = open ("/dev/mixer", O_RDWR, 0)) < 0) {
         ERR("volume: can't open /dev/mixer\n");
-        RET(0);
+        return 0;
     }
     k->set_icons(&c->meter, names);
     c->update_id = g_timeout_add(1000, (GSourceFunc) volume_update_gui, c);
@@ -272,7 +264,7 @@ volume_constructor(plugin_instance *p)
     g_signal_connect(G_OBJECT(p->pwid), "leave-notify-event",
         G_CALLBACK(crossed), (gpointer)c);
 
-    RET(1);
+    return 1;
 }
 
 static void
@@ -280,13 +272,12 @@ volume_destructor(plugin_instance *p)
 {
     volume_priv *c = (volume_priv *) p;
 
-    ENTER;
     g_source_remove(c->update_id);
     if (c->slider_window)
         gtk_widget_destroy(c->slider_window);
     PLUGIN_CLASS(k)->destructor(p);
     class_put("meter");
-    RET();
+    return;
 }
 
 

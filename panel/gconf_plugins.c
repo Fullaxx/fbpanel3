@@ -3,8 +3,6 @@
 #include "gconf.h"
 #include "panel.h"
 
-//#define DEBUGPRN
-#include "dbg.h"
 
 enum
 {
@@ -107,7 +105,6 @@ mk_tab_plugins(xconf *xc)
 {
     GtkWidget *page, *w;
 
-    ENTER;
     page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
     gtk_container_set_border_width(GTK_CONTAINER(page), 10);
 
@@ -119,5 +116,5 @@ mk_tab_plugins(xconf *xc)
     gtk_box_pack_start(GTK_BOX(page), w, FALSE, TRUE, 0);
 
     gtk_widget_show_all(page);
-    RET(page);
+    return page;
 }

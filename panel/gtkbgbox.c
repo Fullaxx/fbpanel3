@@ -89,20 +89,18 @@ gtk_bgbox_init (GtkBgbox *bgbox)
 {
     GtkBgboxPrivate *priv;
 
-    ENTER;
     gtk_widget_set_has_window(GTK_WIDGET(bgbox), TRUE);
 
     priv = gtk_bgbox_get_instance_private(bgbox);
     priv->bg_type = BG_NONE;
     priv->sid = 0;
-    RET();
+    return;
 }
 
 GtkWidget*
 gtk_bgbox_new (void)
 {
-    ENTER;
-    RET(g_object_new (GTK_TYPE_BGBOX, NULL));
+    return g_object_new (GTK_TYPE_BGBOX, NULL);
 }
 
 static void
@@ -110,7 +108,6 @@ gtk_bgbox_finalize (GObject *object)
 {
     GtkBgboxPrivate *priv;
 
-    ENTER;
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(object));
     if (priv->pixmap) {
         cairo_surface_destroy(priv->pixmap);
@@ -124,7 +121,7 @@ gtk_bgbox_finalize (GObject *object)
         g_object_unref(priv->bg);
         priv->bg = NULL;
     }
-    RET();
+    return;
 }
 
 static GdkFilterReturn
@@ -132,7 +129,6 @@ gtk_bgbox_event_filter(GdkXEvent *xevent, GdkEvent *event, GtkWidget *widget)
 {
     XEvent *ev = (XEvent *) xevent;
 
-    ENTER;
     if (ev->type == ConfigureNotify) {
         gtk_widget_queue_draw(widget);
         DBG("ConfigureNotify %d %d %d %d\n",
@@ -142,7 +138,7 @@ gtk_bgbox_event_filter(GdkXEvent *xevent, GdkEvent *event, GtkWidget *widget)
               ev->xconfigure.height
             );
     }
-    RET(GDK_FILTER_CONTINUE);
+    return GDK_FILTER_CONTINUE;
 }
 
 static void
@@ -150,7 +146,6 @@ gtk_bgbox_realize (GtkWidget *widget)
 {
     GtkBgboxPrivate *priv;
 
-    ENTER;
     gtk_widget_add_events(widget,
         GDK_BUTTON_MOTION_MASK |
         GDK_BUTTON_PRESS_MASK  |
@@ -166,7 +161,7 @@ gtk_bgbox_realize (GtkWidget *widget)
         gtk_bgbox_set_background(widget, BG_STYLE, 0, 0);
     gdk_window_add_filter(gtk_widget_get_window(widget),
                           (GdkFilterFunc) gtk_bgbox_event_filter, widget);
-    RET();
+    return;
 }
 
 
@@ -175,22 +170,20 @@ gtk_bgbox_style_updated (GtkWidget *widget)
 {
     GtkBgboxPrivate *priv;
 
-    ENTER;
     GTK_WIDGET_CLASS(parent_class)->style_updated(widget);
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
     if (gtk_widget_get_realized(widget) && gtk_widget_get_has_window(widget)) {
         gtk_bgbox_set_background(widget, priv->bg_type, priv->tintcolor, priv->alpha);
     }
-    RET();
+    return;
 }
 
 /* gtk discards configure_event for GTK_WINDOW_CHILD. too pitty */
 static  gboolean
 gtk_bgbox_configure_event (GtkWidget *widget, GdkEventConfigure *e)
 {
-    ENTER;
     DBG("geom: size (%d, %d). pos (%d, %d)\n", e->width, e->height, e->x, e->y);
-    RET(FALSE);
+    return FALSE;
 }
 
 static void
@@ -234,7 +227,6 @@ gtk_bgbox_size_allocate (GtkWidget *widget, GtkAllocation *wa)
     guint border;
     GtkWidget *child;
 
-    ENTER;
     gtk_widget_get_allocation(widget, &old_alloc);
     same_alloc = !memcmp(&old_alloc, wa, sizeof(*wa));
     DBG("same alloc = %d\n", same_alloc);
@@ -258,7 +250,7 @@ gtk_bgbox_size_allocate (GtkWidget *widget, GtkAllocation *wa)
     child = gtk_bin_get_child(GTK_BIN(widget));
     if (child)
         gtk_widget_size_allocate(child, &ca);
-    RET();
+    return;
 }
 
 
@@ -280,12 +272,11 @@ gtk_bgbox_bg_changed(FbBg *bg, GtkWidget *widget)
 {
     GtkBgboxPrivate *priv;
 
-    ENTER;
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
     if (gtk_widget_get_realized(widget) && gtk_widget_get_has_window(widget)) {
         gtk_bgbox_set_background(widget, priv->bg_type, priv->tintcolor, priv->alpha);
     }
-    RET();
+    return;
 }
 
 void
@@ -293,9 +284,8 @@ gtk_bgbox_set_background(GtkWidget *widget, int bg_type, guint32 tintcolor, gint
 {
     GtkBgboxPrivate *priv;
 
-    ENTER;
     if (!(GTK_IS_BGBOX (widget)))
-        RET();
+        return;
 
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
     DBG("widget=%p bg_type old:%d new:%d\n", widget, priv->bg_type, bg_type);
@@ -331,7 +321,7 @@ gtk_bgbox_set_background(GtkWidget *widget, int bg_type, guint32 tintcolor, gint
     gtk_widget_queue_draw(widget);
 
     DBG("queue draw all %p\n", widget);
-    RET();
+    return;
 }
 
 static void
@@ -342,18 +332,17 @@ gtk_bgbox_set_bg_root(GtkWidget *widget, GtkBgboxPrivate *priv)
 
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
 
-    ENTER;
     priv->pixmap = fb_bg_get_xroot_pix_for_win(priv->bg, widget);
     window = gtk_widget_get_window(widget);
     if (!priv->pixmap) {
         gtk_widget_get_allocation(widget, &alloc);
         gtk_widget_queue_draw_area(widget, 0, 0, alloc.width, alloc.height);
         DBG("no root pixmap was found\n");
-        RET();
+        return;
     }
     if (priv->alpha)
         fb_bg_composite(window, priv->tintcolor, priv->alpha);
-    RET();
+    return;
 }
 
 static void
@@ -361,6 +350,5 @@ gtk_bgbox_set_bg_inherit(GtkWidget *widget, GtkBgboxPrivate *priv)
 {
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
 
-    ENTER;
-    RET();
+    return;
 }

@@ -5,8 +5,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-//#define DEBUGPRN
-#include "dbg.h"
 
 static meter_class *k;
 
@@ -69,7 +67,6 @@ battery_update(battery_priv *c)
     gchar buf[50];
     gchar **i;
 
-    ENTER;
     battery_update_os(c);
     if (c->exist) {
         i = c->charging ? batt_charging : batt_working;
@@ -83,7 +80,7 @@ battery_update(battery_priv *c)
     }
     k->set_icons(&c->meter, i);
     k->set_level(&c->meter, c->level);
-    RET(TRUE);
+    return TRUE;
 }
 
 
@@ -92,15 +89,14 @@ battery_constructor(plugin_instance *p)
 {
     battery_priv *c;
 
-    ENTER;
     if (!(k = class_get("meter")))
-        RET(0);
+        return 0;
     if (!PLUGIN_CLASS(k)->constructor(p))
-        RET(0);
+        return 0;
     c = (battery_priv *) p;
     c->timer = g_timeout_add(2000, (GSourceFunc) battery_update, c);
     battery_update(c);
-    RET(1);
+    return 1;
 }
 
 static void
@@ -108,12 +104,11 @@ battery_destructor(plugin_instance *p)
 {
     battery_priv *c = (battery_priv *) p;
 
-    ENTER;
     if (c->timer)
         g_source_remove(c->timer);
     PLUGIN_CLASS(k)->destructor(p);
     class_put("meter");
-    RET();
+    return;
 }
 
 static plugin_class class = {

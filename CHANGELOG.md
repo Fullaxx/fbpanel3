@@ -3,6 +3,7 @@
   does not exist in GTK3 for GtkWindow, causing a fatal assertion in realize)
 * Replace with GTK3-correct 'size-allocate' handler that preserves
   widthtype=request / heighttype=request dynamic sizing behaviour
+* Fix CMakeLists.txt install rule: COPYING was renamed to LICENSE
 
 
 ## Version: 8.3.1

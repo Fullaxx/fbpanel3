@@ -24,6 +24,8 @@
 #include "eggtraymanager.h"
 #include "eggmarshalers.h"
 
+#define GDK_DPY GDK_DISPLAY_XDISPLAY(gdk_display_get_default())
+
 //#define DEBUGPRN
 #include "dbg.h"
 /* Signals */
@@ -271,9 +273,9 @@ egg_tray_manager_handle_dock_request(EggTrayManager *manager,
         g_signal_connect(socket, "plug_removed",
               G_CALLBACK(egg_tray_manager_plug_removed), manager);
 
-        gdk_error_trap_push();
-        XGetWindowAttributes(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), *window, &wa);
-        if (gdk_error_trap_pop()) {
+        gdk_x11_display_error_trap_push(gdk_display_get_default());
+        XGetWindowAttributes(GDK_DPY, *window, &wa);
+        if (gdk_x11_display_error_trap_pop(gdk_display_get_default())) {
             ERR("can't embed window %lx\n", xevent->data.l[2]);
             goto error;
         }
@@ -611,16 +613,16 @@ egg_tray_manager_get_child_title (EggTrayManager *manager,
   child_window = g_object_get_data (G_OBJECT (child),
         "egg-tray-child-window");
   
-  utf8_string = XInternAtom (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), "UTF8_STRING", False);
-  atom = XInternAtom (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), "_NET_WM_NAME", False);
+  utf8_string = XInternAtom (GDK_DPY, "UTF8_STRING", False);
+  atom = XInternAtom (GDK_DPY, "_NET_WM_NAME", False);
   
-  gdk_error_trap_push();
+  gdk_x11_display_error_trap_push(gdk_display_get_default());
 
-  result = XGetWindowProperty (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), *child_window, atom, 0,
+  result = XGetWindowProperty (GDK_DPY, *child_window, atom, 0,
         G_MAXLONG, False, utf8_string, &type, &format, &nitems,
         &bytes_after, &tmp);
   val = (gchar *) tmp;
-  if (gdk_error_trap_pop() || result != Success || type != utf8_string)
+  if (gdk_x11_display_error_trap_pop(gdk_display_get_default()) || result != Success || type != utf8_string)
     return NULL;
 
   if (format != 8 || nitems == 0) {

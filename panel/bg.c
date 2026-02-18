@@ -33,6 +33,7 @@
 
 #include "bg.h"
 #include "panel.h"
+#include "misc.h"
 
 //#define DEBUGPRN
 #include "dbg.h"
@@ -121,7 +122,7 @@ fb_bg_init (FbBg *bg)
     uint mask;
 
     ENTER;
-    bg->dpy = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
+    bg->dpy = GDK_DPY;
     bg->xroot = DefaultRootWindow(bg->dpy);
     bg->id = XInternAtom(bg->dpy, "_XROOTPMAP_ID", False);
     bg->pixmap = fb_bg_get_xrootpmap_real(bg);

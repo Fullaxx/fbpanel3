@@ -7,7 +7,12 @@
 #include <gdk/gdkx.h>
 #include <stdio.h>
 
+/* Convenience macro: the X11 Display for the default GDK display */
+#define GDK_DPY GDK_DISPLAY_XDISPLAY(gdk_display_get_default())
+
 #include "panel.h"
+
+GtkWidget *fb_create_calendar(void);
 
 int str2num(xconf_enum *p, gchar *str, int defval);
 gchar *num2str(xconf_enum *p, int num, gchar *defval);

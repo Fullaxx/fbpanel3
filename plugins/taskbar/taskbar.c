@@ -8,9 +8,9 @@
 //#include <X11/xpm.h>
 
 #include <gdk-pixbuf/gdk-pixbuf.h>
-#include <gdk-pixbuf-xlib/gdk-pixbuf-xlib.h>
 #include <gdk/gdk.h>
 #include <gdk/gdkx.h>
+#include <cairo/cairo-xlib.h>
 
 
 
@@ -249,23 +249,59 @@ del_task (taskbar_priv * tb, task *tk, int hdel)
 
 
 
-/* GTK3: GdkColormap/GdkPixmap/GdkDrawable APIs removed.
- * _wnck_gdk_pixbuf_get_from_pixmap stubbed; callers fall back to
- * _NET_WM_ICON or the generic icon. */
+/* GTK3: GdkPixmap/GdkColormap removed; use cairo-xlib to read X11 pixmaps. */
 static GdkPixbuf*
-_wnck_gdk_pixbuf_get_from_pixmap (GdkPixbuf   *dest,
-                                  Pixmap       xpixmap,
-                                  int          src_x,
-                                  int          src_y,
-                                  int          dest_x,
-                                  int          dest_y,
-                                  int          width,
-                                  int          height)
+_wnck_gdk_pixbuf_get_from_pixmap (GdkPixbuf *dest,
+                                  Pixmap     xpixmap,
+                                  int        src_x,
+                                  int        src_y,
+                                  int        dest_x,
+                                  int        dest_y,
+                                  int        width,
+                                  int        height)
 {
-    (void)dest; (void)xpixmap;
-    (void)src_x; (void)src_y; (void)dest_x; (void)dest_y;
-    (void)width; (void)height;
-    return NULL;
+    Window       root_win;
+    int          px, py;
+    unsigned int pw, ph, pbw, pdepth;
+    XVisualInfo  vinfo_tmpl, *vinfo;
+    int          nvisuals;
+    cairo_surface_t *surface;
+    GdkPixbuf   *pixbuf;
+
+    if (!XGetGeometry(GDK_DPY, xpixmap, &root_win,
+                      &px, &py, &pw, &ph, &pbw, &pdepth))
+        return NULL;
+
+    vinfo_tmpl.screen = DefaultScreen(GDK_DPY);
+    vinfo_tmpl.depth  = pdepth;
+    vinfo = XGetVisualInfo(GDK_DPY, VisualScreenMask | VisualDepthMask,
+                           &vinfo_tmpl, &nvisuals);
+    if (!vinfo || !nvisuals)
+    {
+        if (vinfo) XFree(vinfo);
+        return NULL;
+    }
+
+    surface = cairo_xlib_surface_create(GDK_DPY, xpixmap,
+                                        vinfo[0].visual, pw, ph);
+    XFree(vinfo);
+
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
+    {
+        cairo_surface_destroy(surface);
+        return NULL;
+    }
+
+    pixbuf = gdk_pixbuf_get_from_surface(surface, src_x, src_y, width, height);
+    cairo_surface_destroy(surface);
+
+    if (pixbuf && dest)
+    {
+        gdk_pixbuf_copy_area(pixbuf, 0, 0, width, height, dest, dest_x, dest_y);
+        g_object_unref(pixbuf);
+        return dest;
+    }
+    return pixbuf;
 }
 
 static GdkPixbuf*
@@ -469,7 +505,7 @@ get_wm_icon(Window tkwin, int iw, int ih)
     GdkPixbuf *ret, *masked, *pixmap, *mask = NULL;
 
     ENTER;
-    hints = XGetWMHints(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tkwin);
+    hints = XGetWMHints(GDK_DPY, tkwin);
     DBG("\nwm_hints %s\n", hints ? "ok" : "failed");
     if (!hints)
         RET(NULL);
@@ -485,7 +521,7 @@ get_wm_icon(Window tkwin, int iw, int ih)
     if (xpixmap == None)
         RET(NULL);
 
-    if (!XGetGeometry (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), xpixmap, &win, &sd, &sd, &w, &h,
+    if (!XGetGeometry (GDK_DPY, xpixmap, &win, &sd, &sd, &w, &h,
               (guint *)&sd, (guint *)&sd)) {
         DBG("XGetGeometry failed for %x pixmap\n", (unsigned int)xpixmap);
         RET(NULL);
@@ -494,7 +530,7 @@ get_wm_icon(Window tkwin, int iw, int ih)
     pixmap = _wnck_gdk_pixbuf_get_from_pixmap (NULL, xpixmap, 0, 0, 0, 0, w, h);
     if (!pixmap)
         RET(NULL);
-    if (xmask != None && XGetGeometry (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), xmask,
+    if (xmask != None && XGetGeometry (GDK_DPY, xmask,
               &win, &sd, &sd, &w, &h, (guint *)&sd, (guint *)&sd)) {
         mask = _wnck_gdk_pixbuf_get_from_pixmap (NULL, xmask, 0, 0, 0, 0, w, h);
 
@@ -590,14 +626,14 @@ tk_raise_window( task *tk, guint32 time )
     if (tk->desktop != -1 && tk->desktop != tk->tb->cur_desk){
         Xclimsg(GDK_ROOT_WINDOW(), a_NET_CURRENT_DESKTOP, tk->desktop,
             0, 0, 0, 0);
-        XSync (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), False);
+        XSync (GDK_DPY, False);
     }
     if(use_net_active) {
         Xclimsg(tk->win, a_NET_ACTIVE_WINDOW, 2, time, 0, 0, 0);
     }
     else {
-        XRaiseWindow (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win);
-        XSetInputFocus (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win, RevertToNone, CurrentTime);
+        XRaiseWindow (GDK_DPY, tk->win);
+        XSetInputFocus (GDK_DPY, tk->win, RevertToNone, CurrentTime);
     }
     DBG("XRaiseWindow %x\n", tk->win);
 }
@@ -704,16 +740,16 @@ tk_callback_scroll_event (GtkWidget *widget, GdkEventScroll *event, task *tk)
         if (gdkwindow)
             gdk_window_show (gdkwindow);
         else
-            XMapRaised (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win);
-        XSetInputFocus (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win, RevertToNone, CurrentTime);
+            XMapRaised (GDK_DPY, tk->win);
+        XSetInputFocus (GDK_DPY, tk->win, RevertToNone, CurrentTime);
         DBG("XMapRaised  %x\n", tk->win);
     } else if (event->direction == GDK_SCROLL_DOWN) {
         DBG("tb->ptk = %x\n", (tk->tb->ptk) ? tk->tb->ptk->win : 0);
-        XIconifyWindow (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win, DefaultScreen(GDK_DISPLAY_XDISPLAY(gdk_display_get_default())));
+        XIconifyWindow (GDK_DPY, tk->win, DefaultScreen(GDK_DPY));
         DBG("XIconifyWindow %x\n", tk->win);
     }
 
-    XSync (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), False);
+    XSync (GDK_DPY, False);
     RET(TRUE);
 }
 
@@ -763,16 +799,16 @@ tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
                 if (gdkwindow)
                     gdk_window_show (gdkwindow);
                 else
-                    XMapRaised (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win);
-                XSync (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), False);
+                    XMapRaised (GDK_DPY, tk->win);
+                XSync (GDK_DPY, False);
                 DBG("XMapRaised  %x\n", tk->win);
             }
         } else {
             DBG("tb->ptk = %x\n", (tk->tb->ptk) ? tk->tb->ptk->win : 0);
             if (tk->focused || tk == tk->tb->ptk) {
                 //tk->iconified = 1;
-                XIconifyWindow (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win,
-                    DefaultScreen(GDK_DISPLAY_XDISPLAY(gdk_display_get_default())));
+                XIconifyWindow (GDK_DPY, tk->win,
+                    DefaultScreen(GDK_DPY));
                 DBG("XIconifyWindow %x\n", tk->win);
             } else {
                 tk_raise_window( tk, event->time );
@@ -785,7 +821,7 @@ tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
             0, 0, 0);
     } else if (event->button == 3) {
         /*
-        XLowerWindow (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win);
+        XLowerWindow (GDK_DPY, tk->win);
         DBG("XLowerWindow %x\n", tk->win);
         */
         tk->tb->menutask = tk;
@@ -793,7 +829,7 @@ tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
             (GtkMenuPositionFunc)menu_pos, widget, event->button, event->time);
 
     }
-    XSync (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), False);
+    XSync (GDK_DPY, False);
     RET(TRUE);
 }
 
@@ -852,12 +888,12 @@ tk_build_gui(taskbar_priv *tb, task *tk)
      * Do not change event mask to gtk windows spwaned by this gtk client
      * this breaks gtk internals */
     if (!FBPANEL_WIN(tk->win))
-        XSelectInput(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win,
+        XSelectInput(GDK_DPY, tk->win,
                 PropertyChangeMask | StructureNotifyMask);
 
     /* button */
     tk->button = gtk_button_new();
-    gtk_button_set_alignment(GTK_BUTTON(tk->button), 0.5, 0.5);
+    gtk_widget_set_halign(gtk_bin_get_child(GTK_BIN(tk->button)), GTK_ALIGN_CENTER);
     gtk_widget_show(tk->button);
     gtk_container_set_border_width(GTK_CONTAINER(tk->button), 0);
     gtk_widget_add_events (tk->button, GDK_BUTTON_RELEASE_MASK
@@ -882,8 +918,8 @@ tk_build_gui(taskbar_priv *tb, task *tk)
     /* pix */
     tk_update_icon(tb, tk, None);
     w1 = tk->image = gtk_image_new_from_pixbuf(tk->pixbuf);
-    gtk_misc_set_alignment(GTK_MISC(tk->image), 0.5, 0.5);
-    gtk_misc_set_padding(GTK_MISC(tk->image), 0, 0);
+    gtk_widget_set_halign(tk->image, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(tk->image, GTK_ALIGN_CENTER);
 
     if (!tb->icons_only) {
         w1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1);
@@ -891,8 +927,8 @@ tk_build_gui(taskbar_priv *tb, task *tk)
         gtk_box_pack_start(GTK_BOX(w1), tk->image, FALSE, FALSE, 0);
         tk->label = gtk_label_new(tk->iconified ? tk->iname : tk->name);
         gtk_label_set_ellipsize(GTK_LABEL(tk->label), PANGO_ELLIPSIZE_END);
-        gtk_misc_set_alignment(GTK_MISC(tk->label), 0.0, 0.5);
-        gtk_misc_set_padding(GTK_MISC(tk->label), 0, 0);
+        gtk_widget_set_halign(tk->label, GTK_ALIGN_START);
+        gtk_widget_set_valign(tk->label, GTK_ALIGN_CENTER);
         gtk_box_pack_start(GTK_BOX(w1), tk->label, TRUE, TRUE, 0);
     }
 
@@ -1079,7 +1115,7 @@ tk_has_urgency( task* tk )
     XWMHints* hints;
 
     tk->urgency = 0;
-    hints = XGetWMHints(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tk->win);
+    hints = XGetWMHints(GDK_DPY, tk->win);
     if (hints) {
         if (hints->flags & XUrgencyHint) /* Got urgency hint */
             tk->urgency = 1;
@@ -1177,10 +1213,10 @@ menu_close_window(GtkWidget *widget, taskbar_priv *tb)
 {
     ENTER;
     DBG("win %x\n", tb->menutask->win);
-    XSync (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), 0);
-    //XKillClient(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tb->menutask->win);
+    XSync (GDK_DPY, 0);
+    //XKillClient(GDK_DPY, tb->menutask->win);
     Xclimsgwm(tb->menutask->win, a_WM_PROTOCOLS, a_WM_DELETE_WINDOW);
-    XSync (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), 0);
+    XSync (GDK_DPY, 0);
     RET();
 }
 
@@ -1190,7 +1226,7 @@ menu_raise_window(GtkWidget *widget, taskbar_priv *tb)
 {
     ENTER;
     DBG("win %x\n", tb->menutask->win);
-    XMapRaised(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tb->menutask->win);
+    XMapRaised(GDK_DPY, tb->menutask->win);
     RET();
 }
 
@@ -1200,8 +1236,8 @@ menu_iconify_window(GtkWidget *widget, taskbar_priv *tb)
 {
     ENTER;
     DBG("win %x\n", tb->menutask->win);
-    XIconifyWindow (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tb->menutask->win,
-        DefaultScreen(GDK_DISPLAY_XDISPLAY(gdk_display_get_default())));
+    XIconifyWindow (GDK_DPY, tb->menutask->win,
+        DefaultScreen(GDK_DPY));
     RET();
 }
 
@@ -1323,23 +1359,23 @@ static void
 taskbar_build_gui(plugin_instance *p)
 {
     taskbar_priv *tb = (taskbar_priv *) p;
-    GtkWidget *ali;
 
     ENTER;
-    if (p->panel->orientation == GTK_ORIENTATION_HORIZONTAL)
-        ali = gtk_alignment_new(0.0, 0.5, 0, 0);
-    else
-        ali = gtk_alignment_new(0.5, 0.0, 0, 0);
-    g_signal_connect(G_OBJECT(ali), "size-allocate",
+    g_signal_connect(G_OBJECT(p->pwid), "size-allocate",
         (GCallback) taskbar_size_alloc, tb);
-    gtk_container_set_border_width(GTK_CONTAINER(ali), 0);
-    gtk_container_add(GTK_CONTAINER(p->pwid), ali);
 
     tb->bar = gtk_bar_new(p->panel->orientation, tb->spacing,
         tb->task_height_max, tb->task_width_max);
     gtk_container_set_border_width(GTK_CONTAINER(tb->bar), 0);
-    gtk_container_add(GTK_CONTAINER(ali), tb->bar);
-    gtk_widget_show_all(ali);
+    if (p->panel->orientation == GTK_ORIENTATION_HORIZONTAL) {
+        gtk_widget_set_halign(tb->bar, GTK_ALIGN_START);
+        gtk_widget_set_valign(tb->bar, GTK_ALIGN_CENTER);
+    } else {
+        gtk_widget_set_halign(tb->bar, GTK_ALIGN_CENTER);
+        gtk_widget_set_valign(tb->bar, GTK_ALIGN_START);
+    }
+    gtk_container_add(GTK_CONTAINER(p->pwid), tb->bar);
+    gtk_widget_show_all(tb->bar);
 
     tb->gen_pixbuf = gdk_pixbuf_new_from_xpm_data((const char **)icon_xpm);
 

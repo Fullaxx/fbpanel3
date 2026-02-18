@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.5)
-project(fbpanel VERSION 8.0.0 LANGUAGES C)
+project(fbpanel VERSION 8.1.0 LANGUAGES C)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 set(CMAKE_COLOR_MAKEFILE OFF)
-set(CMAKE_PROJECT_VERSION "8.0.0")
 
 include(GNUInstallDirs)
 find_package(X11 REQUIRED)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(MODULES REQUIRED gmodule-2.0 gtk+-3.0 )
+pkg_check_modules(MODULES REQUIRED gmodule-2.0 gtk+-3.0)
+pkg_check_modules(CAIRO_XLIB REQUIRED cairo-xlib)
 
 # we need this header in order to build target
 configure_file ( "${PROJECT_SOURCE_DIR}/config.h.in" "${PROJECT_SOURCE_DIR}/config.h")
@@ -39,6 +39,10 @@ foreach(PLUGIN ${PLUGINS})
     target_compile_definitions(${PLUGIN}        PUBLIC PLUGIN)
     target_compile_options    (${PLUGIN}        PUBLIC -pthread -MMD)
 endforeach()
+
+# taskbar needs cairo-xlib for Pixmap → GdkPixbuf conversion (WM_HINTS icons)
+target_include_directories(taskbar SYSTEM PRIVATE ${CAIRO_XLIB_INCLUDE_DIRS})
+target_link_libraries(taskbar PRIVATE ${CAIRO_XLIB_LIBRARIES})
 
 # workout manpage
 set(DATADIR "${CMAKE_INSTALL_FULL_DATADIR}/${PROJECT_NAME}/config")

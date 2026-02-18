@@ -176,14 +176,14 @@ task_get_sizepos(task *t)
     XWindowAttributes win_attributes;
 
     ENTER;
-    if (!XGetWindowAttributes(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), t->win, &win_attributes)) {
-        if (!XGetGeometry (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), t->win, &root, &t->x, &t->y, &t->w, &t->h,
+    if (!XGetWindowAttributes(GDK_DPY, t->win, &win_attributes)) {
+        if (!XGetGeometry (GDK_DPY, t->win, &root, &t->x, &t->y, &t->w, &t->h,
                   &dummy, &dummy)) {
             t->x = t->y = t->w = t->h = 2;
         }
 
     } else {
-        XTranslateCoordinates (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), t->win, win_attributes.root,
+        XTranslateCoordinates (GDK_DPY, t->win, win_attributes.root,
               -win_attributes.border_width,
               -win_attributes.border_width,
               &rx, &ry, &junkwin);
@@ -227,10 +227,10 @@ task_update_pix(task *t, desk *d)
     ctx = gtk_widget_get_style_context(widget);
     gtk_style_context_save(ctx);
     gtk_style_context_set_state(ctx, GTK_STATE_FLAG_SELECTED);
-    gtk_style_context_get_background_color(ctx, GTK_STATE_FLAG_SELECTED, &bg_sel);
+    gtk_style_context_get(ctx, GTK_STATE_FLAG_SELECTED, GTK_STYLE_PROPERTY_BACKGROUND_COLOR, &bg_sel, NULL);
     gtk_style_context_get_color(ctx, GTK_STATE_FLAG_SELECTED, &fg_sel);
     gtk_style_context_set_state(ctx, GTK_STATE_FLAG_NORMAL);
-    gtk_style_context_get_background_color(ctx, GTK_STATE_FLAG_NORMAL, &bg_norm);
+    gtk_style_context_get(ctx, GTK_STATE_FLAG_NORMAL, GTK_STYLE_PROPERTY_BACKGROUND_COLOR, &bg_norm, NULL);
     gtk_style_context_get_color(ctx, GTK_STATE_FLAG_NORMAL, &fg_norm);
     gtk_style_context_restore(ctx);
 
@@ -324,10 +324,10 @@ desk_clear_pixmap(desk *d)
         gtk_style_context_save(ctx);
         if (d->no == d->pg->curdesk) {
             gtk_style_context_set_state(ctx, GTK_STATE_FLAG_SELECTED);
-            gtk_style_context_get_background_color(ctx, GTK_STATE_FLAG_SELECTED, &color);
+            gtk_style_context_get(ctx, GTK_STATE_FLAG_SELECTED, GTK_STYLE_PROPERTY_BACKGROUND_COLOR, &color, NULL);
         } else {
             gtk_style_context_set_state(ctx, GTK_STATE_FLAG_NORMAL);
-            gtk_style_context_get_background_color(ctx, GTK_STATE_FLAG_NORMAL, &color);
+            gtk_style_context_get(ctx, GTK_STATE_FLAG_NORMAL, GTK_STYLE_PROPERTY_BACKGROUND_COLOR, &color, NULL);
         }
         gtk_style_context_restore(ctx);
         gdk_cairo_set_source_rgba(cr, &color);
@@ -442,8 +442,13 @@ desk_configure_event (GtkWidget *widget, GdkEventConfigure *event, desk *d)
         d->gpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, w, h);
         desk_draw_bg(d->pg, d);
     }
-    d->scalew = (gfloat)h / (gfloat)gdk_screen_get_height(gdk_screen_get_default());
-    d->scaleh = (gfloat)w / (gfloat)gdk_screen_get_width(gdk_screen_get_default());
+    {
+        GdkMonitor *mon = gdk_display_get_primary_monitor(gdk_display_get_default());
+        GdkRectangle geom;
+        gdk_monitor_get_geometry(mon, &geom);
+        d->scalew = (gfloat)h / (gfloat)geom.height;
+        d->scaleh = (gfloat)w / (gfloat)geom.width;
+    }
     desk_set_dirty(d);
     RET(FALSE);
 }
@@ -710,7 +715,7 @@ get_wm_icon(Window tkwin, int iw, int ih)
     GdkPixbuf *ret, *masked, *pixmap, *mask = NULL;
 
     ENTER;
-    hints = XGetWMHints(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), tkwin);
+    hints = XGetWMHints(GDK_DPY, tkwin);
     DBG("\nwm_hints %s\n", hints ? "ok" : "failed");
     if (!hints)
         RET(NULL);
@@ -725,7 +730,7 @@ get_wm_icon(Window tkwin, int iw, int ih)
     if (xpixmap == None)
         RET(NULL);
 
-    if (!XGetGeometry (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), xpixmap, &win, &sd, &sd, &w, &h,
+    if (!XGetGeometry (GDK_DPY, xpixmap, &win, &sd, &sd, &w, &h,
               (guint *)&sd, (guint *)&sd)) {
         DBG("XGetGeometry failed for %x pixmap\n", (unsigned int)xpixmap);
         RET(NULL);
@@ -734,7 +739,7 @@ get_wm_icon(Window tkwin, int iw, int ih)
     pixmap = _wnck_gdk_pixbuf_get_from_pixmap (NULL, xpixmap, 0, 0, 0, 0, w, h);
     if (!pixmap)
         RET(NULL);
-    if (xmask != None && XGetGeometry (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), xmask,
+    if (xmask != None && XGetGeometry (GDK_DPY, xmask,
               &win, &sd, &sd, &w, &h, (guint *)&sd, (guint *)&sd)) {
         mask = _wnck_gdk_pixbuf_get_from_pixmap (NULL, xmask, 0, 0, 0, 0, w, h);
 
@@ -828,7 +833,7 @@ do_net_client_list_stacking(FbEv *ev, pager_priv *p)
             t->refcount++;
             t->win = p->wins[i];
             if (!FBPANEL_WIN(t->win))
-                XSelectInput (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), t->win, PropertyChangeMask | StructureNotifyMask);
+                XSelectInput (GDK_DPY, t->win, PropertyChangeMask | StructureNotifyMask);
             t->desktop = get_net_wm_desktop(t->win);
             get_net_wm_state(t->win, &t->nws);
             get_net_wm_window_type(t->win, &t->nwwt);
@@ -1034,7 +1039,12 @@ pager_constructor(plugin_instance *plug)
     gtk_container_set_border_width (GTK_CONTAINER (plug->pwid), BORDER);
     gtk_container_add(GTK_CONTAINER(plug->pwid), pg->box);
 
-    pg->ratio = (gfloat)gdk_screen_get_width(gdk_screen_get_default()) / (gfloat)gdk_screen_get_height(gdk_screen_get_default());
+    {
+        GdkMonitor *mon = gdk_display_get_primary_monitor(gdk_display_get_default());
+        GdkRectangle geom;
+        gdk_monitor_get_geometry(mon, &geom);
+        pg->ratio = (gfloat)geom.width / (gfloat)geom.height;
+    }
     if (plug->panel->orientation == GTK_ORIENTATION_HORIZONTAL) {
         pg->dah = plug->panel->ah - 2 * BORDER;
         pg->daw = (gfloat) pg->dah * pg->ratio;

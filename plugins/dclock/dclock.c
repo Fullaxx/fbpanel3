@@ -63,31 +63,6 @@ typedef struct
 
 //static dclock_priv me;
 
-static GtkWidget *
-dclock_create_calendar()
-{
-    GtkWidget *calendar, *win;
-
-    win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_default_size(GTK_WINDOW(win), 180, 180);
-    gtk_window_set_decorated(GTK_WINDOW(win), FALSE);
-    gtk_window_set_resizable(GTK_WINDOW(win), FALSE);
-    gtk_container_set_border_width(GTK_CONTAINER(win), 5);
-    gtk_window_set_skip_taskbar_hint(GTK_WINDOW(win), TRUE);
-    gtk_window_set_skip_pager_hint(GTK_WINDOW(win), TRUE);
-    gtk_window_set_position(GTK_WINDOW(win), GTK_WIN_POS_MOUSE);
-    gtk_window_set_title(GTK_WINDOW(win), "calendar");
-    gtk_window_stick(GTK_WINDOW(win));
-          
-    calendar = gtk_calendar_new();
-    gtk_calendar_set_display_options(
-        GTK_CALENDAR(calendar),
-        GTK_CALENDAR_SHOW_WEEK_NUMBERS | GTK_CALENDAR_SHOW_DAY_NAMES
-        | GTK_CALENDAR_SHOW_HEADING);
-    gtk_container_add(GTK_CONTAINER(win), GTK_WIDGET(calendar));
- 
-    return win;
-}  
 
 static gboolean
 clicked(GtkWidget *widget, GdkEventButton *event, dclock_priv *dc)
@@ -104,7 +79,7 @@ clicked(GtkWidget *widget, GdkEventButton *event, dclock_priv *dc)
     {
         if (dc->calendar_window == NULL)
         {
-            dc->calendar_window = dclock_create_calendar();
+            dc->calendar_window = fb_create_calendar();
             gtk_widget_show_all(dc->calendar_window);
             gtk_widget_set_tooltip_markup(dc->plugin.pwid, NULL);
         }
@@ -321,8 +296,12 @@ dclock_constructor(plugin_instance *p)
         dclock_set_color(dc->glyphs, dc->color);
   
     dc->main = gtk_image_new_from_pixbuf(dc->clock);
-    gtk_misc_set_alignment(GTK_MISC(dc->main), 0.5, 0.5);
-    gtk_misc_set_padding(GTK_MISC(dc->main), 1, 1);
+    gtk_widget_set_halign(dc->main, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(dc->main, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_start(dc->main, 1);
+    gtk_widget_set_margin_end(dc->main, 1);
+    gtk_widget_set_margin_top(dc->main, 1);
+    gtk_widget_set_margin_bottom(dc->main, 1);
     gtk_container_add(GTK_CONTAINER(p->pwid), dc->main);
     //gtk_widget_show(dc->clockw);
     g_signal_connect (G_OBJECT (p->pwid), "button_press_event",

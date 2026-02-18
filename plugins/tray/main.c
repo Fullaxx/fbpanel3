@@ -73,7 +73,12 @@ message_sent (EggTrayManager *manager, GtkWidget *icon, const char *text,
     
     ENTER;
     gdk_window_get_origin (gtk_widget_get_window(icon), &x, &y);
-    fixed_tip_show (0, x, y, FALSE, gdk_screen_height () - 50, text);
+    {
+        GdkMonitor *mon = gdk_display_get_primary_monitor(gdk_display_get_default());
+        GdkRectangle geom;
+        gdk_monitor_get_geometry(mon, &geom);
+        fixed_tip_show (0, x, y, FALSE, geom.y + geom.height - 50, text);
+    }
     RET();
 }
 
@@ -125,21 +130,19 @@ tray_constructor(plugin_instance *p)
 {
     tray_priv *tr;
     GdkScreen *screen;
-    GtkWidget *ali;
-    
+
     ENTER;
     tr = (tray_priv *) p;
     class_get("tray");
-    ali = gtk_alignment_new(0.5, 0.5, 0, 0);
-    g_signal_connect(G_OBJECT(ali), "size-allocate",
+    g_signal_connect(G_OBJECT(p->pwid), "size-allocate",
         (GCallback) tray_size_alloc, tr);
-    gtk_container_set_border_width(GTK_CONTAINER(ali), 0);
-    gtk_container_add(GTK_CONTAINER(p->pwid), ali);
     tr->box = gtk_bar_new(p->panel->orientation, 0,
         p->panel->max_elem_height, p->panel->max_elem_height);
-    gtk_container_add(GTK_CONTAINER(ali), tr->box);
-    gtk_container_set_border_width(GTK_CONTAINER (tr->box), 0);
-    gtk_widget_show_all(ali);
+    gtk_widget_set_halign(tr->box, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(tr->box, GTK_ALIGN_CENTER);
+    gtk_container_set_border_width(GTK_CONTAINER(tr->box), 0);
+    gtk_container_add(GTK_CONTAINER(p->pwid), tr->box);
+    gtk_widget_show_all(tr->box);
     tr->bg = fb_bg_get_for_display();
     tr->sid = g_signal_connect(tr->bg, "changed",
         G_CALLBACK(tray_bg_changed), p->pwid);

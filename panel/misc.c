@@ -140,7 +140,7 @@ void resolve_atoms()
     Display *dpy;
 
     ENTER;
-    dpy = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
+    dpy = GDK_DPY;
 
     a_UTF8_STRING                = XInternAtom(dpy, "UTF8_STRING", False);
     a_XROOTPMAP_ID               = XInternAtom(dpy, "_XROOTPMAP_ID", False);
@@ -208,7 +208,7 @@ Xclimsg(Window win, long type, long l0, long l1, long l2, long l3, long l4)
     xev.type = ClientMessage;
     xev.window = win;
     xev.send_event = True;
-    xev.display = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
+    xev.display = GDK_DPY;
     xev.message_type = type;
     xev.format = 32;
     xev.data.l[0] = l0;
@@ -216,7 +216,7 @@ Xclimsg(Window win, long type, long l0, long l1, long l2, long l3, long l4)
     xev.data.l[2] = l2;
     xev.data.l[3] = l3;
     xev.data.l[4] = l4;
-    XSendEvent(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), GDK_ROOT_WINDOW(), False,
+    XSendEvent(GDK_DPY, GDK_ROOT_WINDOW(), False,
           (SubstructureNotifyMask | SubstructureRedirectMask),
           (XEvent *) & xev);
 }
@@ -232,7 +232,7 @@ Xclimsgwm(Window win, Atom type, Atom arg)
     xev.format = 32;
     xev.data.l[0] = arg;
     xev.data.l[1] = GDK_CURRENT_TIME;
-    XSendEvent(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, False, 0L, (XEvent *) &xev);
+    XSendEvent(GDK_DPY, win, False, 0L, (XEvent *) &xev);
 }
 
 
@@ -250,7 +250,7 @@ get_utf8_property(Window win, Atom atom)
 
     type = None;
     retval = NULL;
-    result = XGetWindowProperty (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, atom, 0, G_MAXLONG, False,
+    result = XGetWindowProperty (GDK_DPY, win, atom, 0, G_MAXLONG, False,
           a_UTF8_STRING, &type, &format, &nitems,
           &bytes_after, &tmp);
     if (result != Success)
@@ -276,7 +276,7 @@ get_utf8_property_list(Window win, Atom atom, int *count)
     guchar *tmp = NULL;
 
     *count = 0;
-    result = XGetWindowProperty(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, atom, 0, G_MAXLONG, False,
+    result = XGetWindowProperty(GDK_DPY, win, atom, 0, G_MAXLONG, False,
           a_UTF8_STRING, &type, &format, &nitems,
           &bytes_after, &tmp);
     if (result != Success || type != a_UTF8_STRING || tmp == NULL)
@@ -320,7 +320,7 @@ get_xaproperty (Window win, Atom prop, Atom type, int *nitems)
 
     ENTER;
     prop_data = NULL;
-    if (XGetWindowProperty (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, prop, 0, 0x7fffffff, False,
+    if (XGetWindowProperty (GDK_DPY, win, prop, 0, 0x7fffffff, False,
               type, &type_ret, &format_ret, &items_ret,
               &after_ret, &prop_data) != Success)
         RET(NULL);
@@ -367,7 +367,7 @@ get_textproperty(Window win, Atom atom)
     char *retval;
 
     ENTER;
-    if (XGetTextProperty(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, &text_prop, atom)) {
+    if (XGetTextProperty(GDK_DPY, win, &text_prop, atom)) {
         DBG("format=%d enc=%d nitems=%d value=%s   \n",
               text_prop.format,
               text_prop.encoding,
@@ -580,12 +580,13 @@ calculate_position(panel *np)
      * calculate the location based on that.  Otherwise, just use the
      * screen dimensions. */
     if(np->xineramaHead != FBPANEL_INVALID_XINERAMA_HEAD) {
-      GdkScreen *screen = gdk_screen_get_default();
-      int nDisplay = gdk_screen_get_n_monitors(screen);
+      GdkDisplay *dpy = gdk_display_get_default();
+      int nDisplay = gdk_display_get_n_monitors(dpy);
       GdkRectangle rect;
 
       if(np->xineramaHead < nDisplay) {
-        gdk_screen_get_monitor_geometry(screen, np->xineramaHead, &rect);
+        GdkMonitor *mon = gdk_display_get_monitor(dpy, np->xineramaHead);
+        gdk_monitor_get_geometry(mon, &rect);
         minx = rect.x;
         miny = rect.y;
         sswidth = rect.width;
@@ -594,11 +595,14 @@ calculate_position(panel *np)
       }
     }
 
-    if (!positionSet)  {
-        minx = miny = 0;
-        sswidth  = gdk_screen_width();
-        ssheight = gdk_screen_height();
-
+    if (!positionSet) {
+        GdkMonitor *mon = gdk_display_get_primary_monitor(gdk_display_get_default());
+        GdkRectangle rect;
+        gdk_monitor_get_geometry(mon, &rect);
+        minx = rect.x;
+        miny = rect.y;
+        sswidth  = rect.width;
+        ssheight = rect.height;
     }
 
     np->screenRect.x = minx;
@@ -1020,8 +1024,8 @@ fb_button_new(gchar *iname, gchar *fname, int width, int height,
     gtk_container_set_border_width(GTK_CONTAINER(b), 0);
     gtk_widget_set_can_focus(b, FALSE);
     image = fb_image_new(iname, fname, width, height);
-    gtk_misc_set_alignment(GTK_MISC(image), 0.5, 0.5);
-    gtk_misc_set_padding (GTK_MISC(image), 0, 0);
+    gtk_widget_set_halign(image, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(image, GTK_ALIGN_CENTER);
     conf = g_object_get_data(G_OBJECT(image), "conf");
     conf->hicolor = hicolor;
     conf->pix[1] = fb_pixbuf_make_back_image(conf->pix[0], conf->hicolor);
@@ -1091,6 +1095,33 @@ fb_button_pressed(GtkWidget *widget, GdkEventButton *event)
         gtk_image_set_from_pixbuf(GTK_IMAGE(widget), conf->pix[i]);
     }
     RET(FALSE);
+}
+
+
+GtkWidget *
+fb_create_calendar(void)
+{
+    GtkWidget *calendar, *win;
+
+    win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_default_size(GTK_WINDOW(win), 180, 180);
+    gtk_window_set_decorated(GTK_WINDOW(win), FALSE);
+    gtk_window_set_resizable(GTK_WINDOW(win), FALSE);
+    gtk_container_set_border_width(GTK_CONTAINER(win), 5);
+    gtk_window_set_skip_taskbar_hint(GTK_WINDOW(win), TRUE);
+    gtk_window_set_skip_pager_hint(GTK_WINDOW(win), TRUE);
+    gtk_window_set_position(GTK_WINDOW(win), GTK_WIN_POS_MOUSE);
+    gtk_window_set_title(GTK_WINDOW(win), "calendar");
+    gtk_window_stick(GTK_WINDOW(win));
+
+    calendar = gtk_calendar_new();
+    gtk_calendar_set_display_options(
+        GTK_CALENDAR(calendar),
+        GTK_CALENDAR_SHOW_WEEK_NUMBERS | GTK_CALENDAR_SHOW_DAY_NAMES
+        | GTK_CALENDAR_SHOW_HEADING);
+    gtk_container_add(GTK_CONTAINER(win), GTK_WIDGET(calendar));
+
+    return win;
 }
 
 

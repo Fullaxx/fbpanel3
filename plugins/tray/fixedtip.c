@@ -61,21 +61,15 @@ fixed_tip_show (int screen_number,
   if (tip == NULL)
     {      
       tip = gtk_window_new (GTK_WINDOW_POPUP);
-#ifdef HAVE_GTK_MULTIHEAD
       {
-        GdkScreen *gdk_screen;
-
-        gdk_screen = gdk_display_get_screen (gdk_get_default_display (),
-                                             screen_number);
-        gtk_window_set_screen (GTK_WINDOW (tip),
-                               gdk_screen);
-        screen_width = gdk_screen_get_width (gdk_screen);
-        screen_height = gdk_screen_get_height (gdk_screen);
+        GdkDisplay *dpy = gdk_display_get_default();
+        GdkMonitor *mon = gdk_display_get_primary_monitor(dpy);
+        GdkRectangle geom;
+        gdk_monitor_get_geometry(mon, &geom);
+        screen_width  = geom.x + geom.width;
+        screen_height = geom.y + geom.height;
+        (void)screen_number;
       }
-#else
-      screen_width = gdk_screen_width ();
-      screen_height = gdk_screen_height ();      
-#endif
       
       gtk_widget_set_app_paintable (tip, TRUE);
       //gtk_window_set_policy (GTK_WINDOW (tip), FALSE, FALSE, TRUE);
@@ -97,7 +91,8 @@ fixed_tip_show (int screen_number,
       
       label = gtk_label_new (NULL);
       gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
-      gtk_misc_set_alignment (GTK_MISC (label), 0.5, 0.5);
+      gtk_label_set_xalign (GTK_LABEL (label), 0.5);
+      gtk_label_set_yalign (GTK_LABEL (label), 0.5);
       gtk_widget_show (label);
       
       gtk_container_add (GTK_CONTAINER (tip), label);

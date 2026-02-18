@@ -106,10 +106,10 @@ panel_set_wm_strut(panel *p)
           data[5 + i*2]);
 
     /* if wm supports STRUT_PARTIAL it will ignore STRUT */
-    XChangeProperty(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), p->topxwin, a_NET_WM_STRUT_PARTIAL,
+    XChangeProperty(GDK_DPY, p->topxwin, a_NET_WM_STRUT_PARTIAL,
         XA_CARDINAL, 32, PropModeReplace,  (unsigned char *) data, 12);
     /* old spec, for wms that do not support STRUT_PARTIAL */
-    XChangeProperty(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), p->topxwin, a_NET_WM_STRUT,
+    XChangeProperty(GDK_DPY, p->topxwin, a_NET_WM_STRUT,
         XA_CARDINAL, 32, PropModeReplace,  (unsigned char *) data, 4);
 
     RET();
@@ -616,8 +616,8 @@ panel_start_gui(panel *p)
     p->topxwin = GDK_WINDOW_XID(gtk_widget_get_window(p->topgwin));
     DBG("topxwin = %lx\n", p->topxwin);
     /* ensure configure event */
-    XMoveWindow(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), p->topxwin, 20, 20);
-    XSync(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), False);
+    XMoveWindow(GDK_DPY, p->topxwin, 20, 20);
+    XSync(GDK_DPY, False);
 
     gtk_widget_set_app_paintable(p->topgwin, TRUE);
     calculate_position(p);
@@ -625,7 +625,7 @@ panel_start_gui(panel *p)
     gtk_window_resize(GTK_WINDOW(p->topgwin), p->aw, p->ah);
     DBG("move-resize x %d y %d w %d h %d\n", p->ax, p->ay, p->aw, p->ah);
     //XSync(GDK_DISPLAY(), False);
-    //gdk_flush();
+    //gdk_display_flush(gdk_display_get_default());
 
     // background box all over toplevel
     p->bbox = gtk_bgbox_new();
@@ -659,11 +659,11 @@ panel_start_gui(panel *p)
     if (p->setstrut)
         panel_set_wm_strut(p);
 
-    XSelectInput(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), GDK_ROOT_WINDOW(), PropertyChangeMask);
+    XSelectInput(GDK_DPY, GDK_ROOT_WINDOW(), PropertyChangeMask);
     gdk_window_add_filter(gdk_get_default_root_window(),
           (GdkFilterFunc)panel_event_filter, p);
     //XSync(GDK_DISPLAY(), False);
-    gdk_flush();
+    gdk_display_flush(gdk_display_get_default());
     RET();
 }
 
@@ -829,16 +829,16 @@ panel_stop(panel *p)
     g_list_free(p->plugins);
     p->plugins = NULL;
 
-    XSelectInput(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), GDK_ROOT_WINDOW(), NoEventMask);
+    XSelectInput(GDK_DPY, GDK_ROOT_WINDOW(), NoEventMask);
     gdk_window_remove_filter(gdk_get_default_root_window(),
           (GdkFilterFunc)panel_event_filter, p);
     gtk_widget_destroy(p->topgwin);
     gtk_widget_destroy(p->menu);
     g_object_unref(fbev);
     //g_free(p->workarea);
-    gdk_flush();
-    XFlush(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()));
-    XSync(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), True);
+    gdk_display_flush(gdk_display_get_default());
+    XFlush(GDK_DPY);
+    XSync(GDK_DPY, True);
     RET();
 }
 
@@ -867,7 +867,7 @@ handle_error(Display * d, XErrorEvent * ev)
     char buf[256];
 
     ENTER;
-    XGetErrorText(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), ev->error_code, buf, 256);
+    XGetErrorText(GDK_DPY, ev->error_code, buf, 256);
     DBG("fbpanel : X error: %s\n", buf);
 
     RET();

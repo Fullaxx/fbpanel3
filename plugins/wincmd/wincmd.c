@@ -112,10 +112,10 @@ toggle_iconify(wincmd_priv *wc)
     }
     while (j-- > 0) {
         if (raise)
-            XMapWindow (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), awin[j]);
+            XMapWindow (GDK_DPY, awin[j]);
         else
-            XIconifyWindow(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), awin[j],
-                DefaultScreen(GDK_DISPLAY_XDISPLAY(gdk_display_get_default())));
+            XIconifyWindow(GDK_DPY, awin[j],
+                DefaultScreen(GDK_DPY));
     }
     
     g_free(awin);

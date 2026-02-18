@@ -28,7 +28,6 @@
 #include "gtkbgbox.h"
 #include "bg.h"
 #include <gdk/gdk.h>
-#include <gdk/gdkx.h>
 #include <glib.h>
 #include <glib-object.h>
 
@@ -124,23 +123,6 @@ gtk_bgbox_finalize (GObject *object)
     return;
 }
 
-static GdkFilterReturn
-gtk_bgbox_event_filter(GdkXEvent *xevent, GdkEvent *event, GtkWidget *widget)
-{
-    XEvent *ev = (XEvent *) xevent;
-
-    if (ev->type == ConfigureNotify) {
-        gtk_widget_queue_draw(widget);
-        DBG("ConfigureNotify %d %d %d %d\n",
-              ev->xconfigure.x,
-              ev->xconfigure.y,
-              ev->xconfigure.width,
-              ev->xconfigure.height
-            );
-    }
-    return GDK_FILTER_CONTINUE;
-}
-
 static void
 gtk_bgbox_realize (GtkWidget *widget)
 {
@@ -182,7 +164,6 @@ gtk_bgbox_realize (GtkWidget *widget)
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
     if (priv->bg_type == BG_NONE)
         gtk_bgbox_set_background(widget, BG_STYLE, 0, 0);
-    gdk_window_add_filter(window, (GdkFilterFunc) gtk_bgbox_event_filter, widget);
     return;
 }
 

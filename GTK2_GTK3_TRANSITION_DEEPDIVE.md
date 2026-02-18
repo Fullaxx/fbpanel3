@@ -274,7 +274,7 @@ only WM_HINTS icons (not NetWM `_NET_WM_ICON`) show no icon in the pager.
 | `panel/bg.h` | None | None | Clean |
 | `panel/gtkbar.c` | None | ~~C-1~~ (fixed v8.3.7) | Clean |
 | `panel/gtkbar.h` | None | None | Clean |
-| `panel/gtkbgbox.c` | H-1 (filter) | M-3 | Fix in v8.3.8 |
+| `panel/gtkbgbox.c` | None | ~~H-1/M-3~~ (fixed v8.3.8) | Clean |
 | `panel/panel.c` | None | M-1, L-1 | Fix in v8.3.11 |
 | `panel/plugin.c` | None | None | Clean |
 | `panel/plugin.h` | None | None | Clean |

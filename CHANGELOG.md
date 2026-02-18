@@ -1,3 +1,10 @@
+## Version: 8.3.8
+* Remove deprecated gdk_window_add_filter() from gtkbgbox.c: the
+  gtk_bgbox_event_filter function caught ConfigureNotify X events to call
+  gtk_widget_queue_draw, but GTK3 already queues redraws on configure and
+  all painting is handled by the draw vfunc.  Remove the filter, the filter
+  function, and the now-unused gdkx.h include.
+
 ## Version: 8.3.7
 * Fix "Drawing a gadget with negative dimensions (node box owner GtkBar)" warning
   and subsequent double-free / Abort on window resize: gtk_bar_size_allocate()

@@ -1,3 +1,22 @@
+## Version: 8.0
+
+* Port from GTK2 to GTK3 (3.0+, tested up to 3.24.49)
+* Merge fbpanel_eleksir v7.2 improvements (CMake build, launchbar, translations)
+* Replace all removed GTK2 APIs: GdkColormap, GdkPixmap, GdkDrawable, GdkBitmap
+* Replace GDK_DISPLAY() with GDK_DISPLAY_XDISPLAY(gdk_display_get_default())
+* Replace widget->window with gtk_widget_get_window()
+* Replace expose_event with draw signal and cairo-based rendering
+* Replace GDK_WINDOW_XWINDOW with GDK_WINDOW_XID
+* Replace gdk_xid_table_lookup with gdk_x11_window_lookup_for_display()
+* Replace GTK_WIDGET_MAPPED with gtk_widget_get_mapped() (removed in GTK 3.24.49)
+* Replace gtk_calendar_display_options with gtk_calendar_set_display_options()
+* Replace GdkColor/gdk_color_parse with GdkRGBA/gdk_rgba_parse
+* Replace deprecated GTK_WIDGET_UNSET_FLAGS with gtk_widget_set_can_focus/default()
+* Replace gtk_hbox_new/gtk_vbox_new with gtk_box_new()
+* Remove www/ (old project website)
+* Build tested on Ubuntu 20.04/22.04/24.04, Debian 11/12/13
+
+
 ## Version: 7.2
 * Add cmake rules to build fbpanel
 * Get rid of previous python2-bsed build system

@@ -1,11 +1,9 @@
 TODO List
 
-* Add first draft of Centos-7 spec-file (as an example)
-* Remove former github pages from this particular repo and move it to separate one
-* Split out libfbpanel and put there functions that are shared among fbpanel itself and its plugins
+* Split out libfbpanel and put shared functions into a library used by both
+  fbpanel itself and its plugins
+* Add CI pipeline (GitHub Actions) for multi-distro build verification
 
 Help wanted:
-* update ebuilds
-* new debian package stuff
-* other packaging artifacts for different systems and distributions
-* gtk-3 port
+* Update/add packaging artifacts (RPM spec, ebuild, Debian package)
+* Integration testing on live X11 session

@@ -121,7 +121,7 @@ fb_bg_init (FbBg *bg)
     uint mask;
 
     ENTER;
-    bg->dpy = GDK_DISPLAY();
+    bg->dpy = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
     bg->xroot = DefaultRootWindow(bg->dpy);
     bg->id = XInternAtom(bg->dpy, "_XROOTPMAP_ID", False);
     bg->pixmap = fb_bg_get_xrootpmap_real(bg);
@@ -200,34 +200,35 @@ fb_bg_get_xrootpmap_real(FbBg *bg)
 
 
 
-GdkPixmap *
-fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y,
-    gint width, gint height, gint depth)
+cairo_surface_t *
+fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y, gint width, gint height)
 {
-    GdkPixmap *gbgpix;
+    cairo_surface_t *gbgpix;
     Pixmap bgpix;
+    GtkWidget *widget;
 
     ENTER;
     if (bg->pixmap == None)
         RET(NULL);
-    gbgpix = gdk_pixmap_new(NULL, width, height, depth);
+    gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
     if (!gbgpix) {
-        ERR("gdk_pixmap_new failed\n");
+        ERR("cairo_image_surface_create failed\n");
         RET(NULL);
     }
-    bgpix =  gdk_x11_drawable_get_xid(gbgpix);
-    XSetTSOrigin(bg->dpy, bg->gc, -x, -y) ;
+    widget = gtk_offscreen_window_new();
+    bgpix = gdk_x11_window_get_xid(gtk_widget_get_window(widget));
+    XSetTSOrigin(bg->dpy, bg->gc, -x, -y);
     XFillRectangle(bg->dpy, bgpix, bg->gc, 0, 0, width, height);
     RET(gbgpix);
 }
 
-GdkPixmap *
+cairo_surface_t *
 fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
 {
     Window win;
     Window dummy;
     Pixmap bgpix;
-    GdkPixmap *gbgpix;
+    cairo_surface_t *gbgpix;
     guint  width, height, border, depth;
     int  x, y;
 
@@ -235,7 +236,7 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
     if (bg->pixmap == None)
         RET(NULL);
 
-    win = GDK_WINDOW_XWINDOW(widget->window);
+    win = GDK_WINDOW_XID(gtk_widget_get_window(widget));
     if (!XGetGeometry(bg->dpy, win, &dummy, &x, &y, &width, &height, &border,
               &depth)) {
         DBG2("XGetGeometry failed\n");
@@ -246,46 +247,31 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
 
     XTranslateCoordinates(bg->dpy, win, bg->xroot, 0, 0, &x, &y, &dummy);
     DBG("win=%lx %dx%d%+d%+d\n", win, width, height, x, y);
-    gbgpix = gdk_pixmap_new(NULL, width, height, depth);
+    gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
     if (!gbgpix) {
-        ERR("gdk_pixmap_new failed\n");
+        ERR("cairo_image_surface_create failed\n");
         RET(NULL);
     }
-    bgpix =  gdk_x11_drawable_get_xid(gbgpix);
-    XSetTSOrigin(bg->dpy, bg->gc, -x, -y) ;
+    widget = gtk_offscreen_window_new();
+    bgpix = gdk_x11_window_get_xid(gtk_widget_get_window(widget));
+    XSetTSOrigin(bg->dpy, bg->gc, -x, -y);
     XFillRectangle(bg->dpy, bgpix, bg->gc, 0, 0, width, height);
     RET(gbgpix);
 }
 
 void
-fb_bg_composite(GdkDrawable *base, GdkGC *gc, guint32 tintcolor, gint alpha)
+fb_bg_composite(GdkWindow *base, guint32 tintcolor, gint alpha)
 {
-    GdkPixbuf *ret, *ret2;
-    int w, h;
-    static GdkColormap *cmap = NULL;
+    cairo_t *cr;
+    GdkDrawingContext *content;
 
     ENTER;
-    gdk_drawable_get_size (base, &w, &h);
-    if (!cmap) {
-        cmap = gdk_colormap_get_system ();
-    }
-    DBG("here\n");
-    ret = gdk_pixbuf_get_from_drawable (NULL, base, cmap, 0, 0, 0, 0, w, h);
-    if (!ret)
-        RET();
-    DBG("here w=%d h=%d\n", w, h);
-    ret2 = gdk_pixbuf_composite_color_simple(ret, w, h,
-          GDK_INTERP_HYPER, 255-alpha, MIN(w, h), tintcolor, tintcolor);
-    DBG("here\n");
-    if (!ret2) {
-        g_object_unref(ret);
-        RET();
-    }
-    //gdk_pixbuf_render_to_drawable (ret2, base, gc, 0, 0, 0, 0, w, h, GDK_RGB_DITHER_NONE, 0, 0);
-    gdk_draw_pixbuf (base, gc, ret2, 0, 0, 0, 0, w, h,
-        GDK_RGB_DITHER_NONE, 0, 0);
-    g_object_unref(ret);
-    g_object_unref(ret2);
+    content = gdk_window_begin_draw_frame(base, cairo_region_create());
+    cr = gdk_drawing_context_get_cairo_context(content);
+    gdk_cairo_set_source_rgba(cr, NULL);
+    cairo_paint_with_alpha(cr, (double) alpha / 255);
+    cairo_destroy(cr);
+    fb_bg_changed(fb_bg_get_for_display());
     RET();
 }
 

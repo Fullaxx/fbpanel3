@@ -239,18 +239,21 @@ my_button_pressed(GtkWidget *widget, GdkEventButton *event, plugin_instance *p)
         RET(FALSE);
     }
 
-    if ((event->type == GDK_BUTTON_PRESS)
-        && (event->x >=0 && event->x < widget->allocation.width)
-        && (event->y >=0 && event->y < widget->allocation.height))
     {
-        if (!m->menu)
-            menu_create(p);
-        if (p->panel->autohide)
-            ah_stop(p->panel);
-        gtk_menu_popup(GTK_MENU(m->menu),
-            NULL, NULL, (GtkMenuPositionFunc)menu_pos, widget,
-            event->button, event->time);
-       
+        GtkAllocation alloc;
+        gtk_widget_get_allocation(widget, &alloc);
+        if ((event->type == GDK_BUTTON_PRESS)
+            && (event->x >=0 && event->x < alloc.width)
+            && (event->y >=0 && event->y < alloc.height))
+        {
+            if (!m->menu)
+                menu_create(p);
+            if (p->panel->autohide)
+                ah_stop(p->panel);
+            gtk_menu_popup(GTK_MENU(m->menu),
+                NULL, NULL, (GtkMenuPositionFunc)menu_pos, widget,
+                event->button, event->time);
+        }
     }
     RET(TRUE);
 }

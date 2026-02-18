@@ -28,8 +28,7 @@
 #define __GTK_BAR_H__
 
 
-#include <gdk/gdk.h>
-#include <gtk/gtkbox.h>
+#include <gtk/gtk.h>
 
 
 #ifdef __cplusplus

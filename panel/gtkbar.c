@@ -32,7 +32,8 @@
 #define MAX_CHILD_SIZE 150
 
 static void gtk_bar_class_init    (GtkBarClass   *klass);
-static void gtk_bar_size_request  (GtkWidget *widget, GtkRequisition *requisition);
+static void gtk_bar_get_preferred_width  (GtkWidget *widget, gint *minimum, gint *natural);
+static void gtk_bar_get_preferred_height (GtkWidget *widget, gint *minimum, gint *natural);
 static void gtk_bar_size_allocate (GtkWidget *widget, GtkAllocation  *allocation);
 //static gint gtk_bar_expose        (GtkWidget *widget, GdkEventExpose *event);
 float ceilf(float x);
@@ -74,7 +75,8 @@ gtk_bar_class_init (GtkBarClass *class)
     parent_class = g_type_class_peek_parent (class);
     widget_class = (GtkWidgetClass*) class;
 
-    widget_class->size_request = gtk_bar_size_request;
+    widget_class->get_preferred_width  = gtk_bar_get_preferred_width;
+    widget_class->get_preferred_height = gtk_bar_get_preferred_height;
     widget_class->size_allocate = gtk_bar_size_allocate;
     //widget_class->expose_event = gtk_bar_expose;
 
@@ -88,7 +90,7 @@ gtk_bar_new(GtkOrientation orient, gint spacing,
     GtkBar *bar;
 
     bar = g_object_new (GTK_TYPE_BAR, NULL);
-    GTK_BOX (bar)->spacing = spacing;
+    gtk_box_set_spacing(GTK_BOX(bar), spacing);
     bar->orient = orient;
     bar->child_width = MAX(1, child_width);
     bar->child_height = MAX(1, child_height);
@@ -112,29 +114,25 @@ gint gtk_bar_get_dimension(GtkBar *bar)
 }
 
 static void
-gtk_bar_size_request(GtkWidget *widget, GtkRequisition *requisition)
+gtk_bar_compute_size(GtkWidget *widget, GtkRequisition *requisition)
 {
-    GtkBox *box = GTK_BOX(widget);
-    GtkBar *bar = GTK_BAR(widget);;
-    GtkBoxChild *child;
-    GList *children;
+    GtkBar *bar = GTK_BAR(widget);
+    GList *children, *l;
     gint nvis_children, rows, cols, dim;
 
     nvis_children = 0;
-    children = box->children;
-    while (children) {
-        child = children->data;
-        children = children->next;
-
-        if (GTK_WIDGET_VISIBLE(child->widget))	{
-            GtkRequisition child_requisition;
-
-            /* Do not remove child request !!! Label's proper layout depends
-             * on request running before alloc. */
-            gtk_widget_size_request(child->widget, &child_requisition);
+    children = gtk_container_get_children(GTK_CONTAINER(widget));
+    for (l = children; l; l = l->next) {
+        GtkWidget *child = GTK_WIDGET(l->data);
+        if (gtk_widget_get_visible(child)) {
+            GtkRequisition child_req;
+            /* Do not remove child request — label layout depends on it. */
+            gtk_widget_get_preferred_size(child, &child_req, NULL);
             nvis_children++;
         }
     }
+    g_list_free(children);
+
     DBG("nvis_children=%d\n", nvis_children);
     if (!nvis_children) {
         requisition->width = 2;
@@ -150,42 +148,52 @@ gtk_bar_size_request(GtkWidget *widget, GtkRequisition *requisition)
         rows = (gint) ceilf((float) nvis_children / cols);
     }
 
-    requisition->width = bar->child_width * cols
-        + box->spacing * (cols - 1);
-    requisition->height = bar->child_height * rows
-        + box->spacing * (rows - 1);
+    requisition->width  = bar->child_width  * cols + (cols - 1);
+    requisition->height = bar->child_height * rows + (rows - 1);
     DBG("width=%d, height=%d\n", requisition->width, requisition->height);
+}
+
+static void
+gtk_bar_get_preferred_width(GtkWidget *widget, gint *minimum, gint *natural)
+{
+    GtkRequisition req;
+    gtk_bar_compute_size(widget, &req);
+    *minimum = *natural = req.width;
+}
+
+static void
+gtk_bar_get_preferred_height(GtkWidget *widget, gint *minimum, gint *natural)
+{
+    GtkRequisition req;
+    gtk_bar_compute_size(widget, &req);
+    *minimum = *natural = req.height;
 }
 
 static void
 gtk_bar_size_allocate(GtkWidget *widget, GtkAllocation *allocation)
 {
-    GtkBox *box;
     GtkBar *bar;
-    GtkBoxChild *child;
-    GList *children;
+    GList *children, *l;
     GtkAllocation child_allocation;
     gint nvis_children, tmp, rows, cols, dim;
 
     ENTER;
     DBG("a.w=%d  a.h=%d\n", allocation->width, allocation->height);
-    box = GTK_BOX (widget);
-    bar = GTK_BAR (widget);
-    widget->allocation = *allocation;
+    bar = GTK_BAR(widget);
+    gtk_widget_set_allocation(widget, allocation);
 
     nvis_children = 0;
-    children = box->children;
-    while (children) {
-        child = children->data;
-        children = children->next;
-
-        if (GTK_WIDGET_VISIBLE (child->widget))
-            nvis_children += 1;
+    children = gtk_container_get_children(GTK_CONTAINER(widget));
+    for (l = children; l; l = l->next) {
+        if (gtk_widget_get_visible(GTK_WIDGET(l->data)))
+            nvis_children++;
     }
     gtk_widget_queue_draw(widget);
     dim = MIN(bar->dimension, nvis_children);
-    if (nvis_children == 0)
+    if (nvis_children == 0) {
+        g_list_free(children);
         RET();
+    }
     if (bar->orient == GTK_ORIENTATION_HORIZONTAL) {
         rows = dim;
         cols = (gint) ceilf((float) nvis_children / rows);
@@ -194,9 +202,9 @@ gtk_bar_size_allocate(GtkWidget *widget, GtkAllocation *allocation)
         rows = (gint) ceilf((float) nvis_children / cols);
     }
     DBG("rows=%d cols=%d\n", rows, cols);
-    tmp = allocation->width - (cols - 1) * box->spacing;
+    tmp = allocation->width - (cols - 1);
     child_allocation.width = MIN(tmp / cols, bar->child_width);
-    tmp = allocation->height - (rows - 1) * box->spacing;
+    tmp = allocation->height - (rows - 1);
     child_allocation.height = MIN(tmp / rows, bar->child_height);
 
     if (child_allocation.width < 1)
@@ -209,26 +217,23 @@ gtk_bar_size_allocate(GtkWidget *widget, GtkAllocation *allocation)
 
     child_allocation.x = allocation->x;
     child_allocation.y = allocation->y;
-    children = box->children;
     tmp = 0;
-    while (children) {
-        child = children->data;
-        children = children->next;
-
-        if (GTK_WIDGET_VISIBLE (child->widget)) {
-            DBG("allocate x=%d y=%d\n", child_allocation.x,
-                child_allocation.y);
-            gtk_widget_size_allocate(child->widget, &child_allocation);
+    for (l = children; l; l = l->next) {
+        GtkWidget *child = GTK_WIDGET(l->data);
+        if (gtk_widget_get_visible(child)) {
+            DBG("allocate x=%d y=%d\n", child_allocation.x, child_allocation.y);
+            gtk_widget_size_allocate(child, &child_allocation);
             tmp++;
             if (tmp == cols) {
                 child_allocation.x = allocation->x;
-                child_allocation.y += child_allocation.height + box->spacing;
+                child_allocation.y += child_allocation.height;
                 tmp = 0;
             } else {
-                child_allocation.x += child_allocation.width + box->spacing;
+                child_allocation.x += child_allocation.width;
             }
         }
     }
+    g_list_free(children);
     RET();
 }
 

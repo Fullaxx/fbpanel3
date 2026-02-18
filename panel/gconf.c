@@ -17,17 +17,17 @@ gconf_block_new(GCallback cb, gpointer data, int indent)
     b = g_new0(gconf_block, 1);
     b->cb = cb;
     b->data = data;
-    b->main = gtk_hbox_new(FALSE, 0);
+    b->main = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     /* indent */
     if (indent > 0)
     {
-        w = gtk_hbox_new(FALSE, 0);
+        w = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_widget_set_size_request(w, indent, -1);
         gtk_box_pack_start(GTK_BOX(b->main), w, FALSE, FALSE, 0);
     }
 
     /* area */
-    w = gtk_vbox_new(FALSE, 2);
+    w = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
     gtk_box_pack_start(GTK_BOX(b->main), w, FALSE, FALSE, 0);
     b->area = w;
 
@@ -53,18 +53,18 @@ gconf_block_add(gconf_block *b, GtkWidget *w, gboolean new_row)
         GtkWidget *s;
 
         new_row = TRUE;
-        hbox = gtk_hbox_new(FALSE, 8);
+        hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         b->rows = g_slist_prepend(b->rows, hbox);
         gtk_box_pack_start(GTK_BOX(b->area), hbox, FALSE, FALSE, 0);
         /* space */
-        s = gtk_vbox_new(FALSE, 0);
+        s = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_box_pack_end(GTK_BOX(hbox), s, TRUE, TRUE, 0);
 
         /* allign first elem */
-        if (GTK_IS_MISC(w))
+        if (GTK_IS_WIDGET(w))
         {
             DBG("misc \n");
-            gtk_misc_set_alignment(GTK_MISC(w), 0, 0.5);
+            gtk_label_set_xalign(GTK_LABEL(w), 0.0);
             gtk_size_group_add_widget(b->sgr, w);
         }
     }
@@ -126,11 +126,11 @@ gconf_edit_enum(gconf_block *b, xconf *xc, xconf_enum *e)
 
     xconf_get_enum(xc, &i, e);
     xconf_set_enum(xc, i, e);
-    w = gtk_combo_box_new_text();
+    w = gtk_combo_box_text_new();
     g_object_set_data(G_OBJECT(w), "enum", e);
     while (e && e->str)
     {
-        gtk_combo_box_insert_text(GTK_COMBO_BOX(w), e->num,
+        gtk_combo_box_text_insert((GtkComboBoxText*)(w), e->num, NULL,
             e->desc ? _(e->desc) : _(e->str));
         e++;
     }
@@ -188,10 +188,10 @@ gconf_edit_boolean(gconf_block *b, xconf *xc, gchar *text)
 static void
 gconf_edit_color_cb(GtkColorButton *w, xconf *xc)
 {
-    GdkColor c;
+    GdkRGBA c;
     xconf *xc_alpha;
 
-    gtk_color_button_get_color(GTK_COLOR_BUTTON(w), &c);
+    gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(w), &c);
     xconf_set_value(xc, gdk_color_to_RRGGBB(&c));
     if ((xc_alpha = g_object_get_data(G_OBJECT(w), "alpha")))
     {
@@ -206,22 +206,22 @@ gconf_edit_color(gconf_block *b, xconf *xc_color, xconf *xc_alpha)
 {
 
     GtkWidget *w;
-    GdkColor c;
+    GdkRGBA c;
 
-    gdk_color_parse(xconf_get_value(xc_color), &c);
+    gdk_rgba_parse(&c, xconf_get_value(xc_color));
 
     w = gtk_color_button_new();
-    gtk_color_button_set_color(GTK_COLOR_BUTTON(w), &c);
+    gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(w), &c);
     if (xc_alpha)
     {
         gint a;
 
         xconf_get_int(xc_alpha, &a);
         a <<= 8; /* scale to 0..FFFF from 0..FF */
-        gtk_color_button_set_alpha(GTK_COLOR_BUTTON(w), (guint16) a);
+        gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(w), &c);
         g_object_set_data(G_OBJECT(w), "alpha", xc_alpha);
     }
-    gtk_color_button_set_use_alpha(GTK_COLOR_BUTTON(w),
+    gtk_color_chooser_set_use_alpha(GTK_COLOR_CHOOSER(w),
         xc_alpha != NULL);
 
     g_signal_connect(G_OBJECT(w), "color-set",

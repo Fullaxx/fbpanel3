@@ -37,14 +37,16 @@ button_press_handler (GtkWidget *tip,
 }
 
 static gboolean
-expose_handler (GtkTooltips *tooltips)
+expose_handler (GtkWidget *widget, cairo_t *cr, gpointer data)
 {
-  gtk_paint_flat_box (tip->style, tip->window,
-                      GTK_STATE_NORMAL, GTK_SHADOW_OUT, 
-                      NULL, tip, "tooltip",
-                      0, 0, -1, -1);
+    GtkStyleContext *context;
+    GtkAllocation alloc;
 
-  return FALSE;
+    context = gtk_widget_get_style_context(widget);
+    gtk_widget_get_allocation(widget, &alloc);
+    gtk_render_background(context, cr, 0, 0, alloc.width, alloc.height);
+    gtk_render_frame(context, cr, 0, 0, alloc.width, alloc.height);
+    return FALSE;
 }
 
 void
@@ -81,8 +83,8 @@ fixed_tip_show (int screen_number,
       gtk_widget_set_name (tip, "gtk-tooltips");
       gtk_container_set_border_width (GTK_CONTAINER (tip), 4);
 
-      g_signal_connect (G_OBJECT (tip), 
-            "expose_event",
+      g_signal_connect (G_OBJECT (tip),
+            "draw",
             G_CALLBACK (expose_handler),
             NULL);
    

@@ -21,6 +21,23 @@ static gchar version[] = PROJECT_VERSION;
 static gchar *profile = "default";
 static gchar *profile_file;
 
+/* Wrapper functions matching my_box_new signature */
+static GtkWidget *hbox_new(GtkOrientation o, gint spacing) {
+    (void)o;
+    return gtk_box_new(GTK_ORIENTATION_HORIZONTAL, spacing);
+}
+static GtkWidget *vbox_new(GtkOrientation o, gint spacing) {
+    (void)o;
+    return gtk_box_new(GTK_ORIENTATION_VERTICAL, spacing);
+}
+/* Wrapper functions matching my_separator_new signature */
+static GtkWidget *vseparator_new(void) {
+    return gtk_separator_new(GTK_ORIENTATION_VERTICAL);
+}
+static GtkWidget *hseparator_new(void) {
+    return gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+}
+
 guint mwid; // mouse watcher thread id
 guint hpid; // hide panel thread id
 
@@ -46,7 +63,7 @@ panel_set_wm_strut(panel *p)
     int i = 4;
 
     ENTER;
-    if (!GTK_WIDGET_MAPPED(p->topgwin))
+    if (!gtk_widget_get_mapped(p->topgwin))
         return;
     /* most wm's tend to ignore struts of unmapped windows, and that's how
      * fbpanel hides itself. so no reason to set it. */
@@ -89,10 +106,10 @@ panel_set_wm_strut(panel *p)
           data[5 + i*2]);
 
     /* if wm supports STRUT_PARTIAL it will ignore STRUT */
-    XChangeProperty(GDK_DISPLAY(), p->topxwin, a_NET_WM_STRUT_PARTIAL,
+    XChangeProperty(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), p->topxwin, a_NET_WM_STRUT_PARTIAL,
         XA_CARDINAL, 32, PropModeReplace,  (unsigned char *) data, 12);
     /* old spec, for wms that do not support STRUT_PARTIAL */
-    XChangeProperty(GDK_DISPLAY(), p->topxwin, a_NET_WM_STRUT,
+    XChangeProperty(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), p->topxwin, a_NET_WM_STRUT,
         XA_CARDINAL, 32, PropModeReplace,  (unsigned char *) data, 4);
 
     RET();
@@ -212,10 +229,9 @@ panel_size_alloc (GtkWidget *widget, GdkRectangle *a, gpointer data)
 static void
 make_round_corners(panel *p)
 {
-    GdkBitmap *b;
-    GdkGC* gc;
-    GdkColor black = { 0, 0, 0, 0};
-    GdkColor white = { 1, 0xffff, 0xffff, 0xffff};
+    cairo_surface_t *surface;
+    cairo_t *cr;
+    cairo_region_t *region;
     int w, h, r, br;
 
     ENTER;
@@ -230,24 +246,34 @@ make_round_corners(panel *p)
         DBG("radius too small\n");
         RET();
     }
-    b = gdk_pixmap_new(NULL, w, h, 1);
-    gc = gdk_gc_new(GDK_DRAWABLE(b));
-    gdk_gc_set_foreground(gc, &black);
-    gdk_draw_rectangle(GDK_DRAWABLE(b), gc, TRUE, 0, 0, w, h);
-    gdk_gc_set_foreground(gc, &white);
-    gdk_draw_rectangle(GDK_DRAWABLE(b), gc, TRUE, r, 0, w-2*r, h);
-    gdk_draw_rectangle(GDK_DRAWABLE(b), gc, TRUE, 0, r, r, h-2*r);
-    gdk_draw_rectangle(GDK_DRAWABLE(b), gc, TRUE, w-r, r, r, h-2*r);
-
     br = 2 * r;
-    gdk_draw_arc(GDK_DRAWABLE(b), gc, TRUE, 0, 0, br, br, 0*64, 360*64);
-    gdk_draw_arc(GDK_DRAWABLE(b), gc, TRUE, 0, h-br-1, br, br, 0*64, 360*64);
-    gdk_draw_arc(GDK_DRAWABLE(b), gc, TRUE, w-br, 0, br, br, 0*64, 360*64);
-    gdk_draw_arc(GDK_DRAWABLE(b), gc, TRUE, w-br, h-br-1, br, br, 0*64, 360*64);
 
-    gtk_widget_shape_combine_mask(p->topgwin, b, 0, 0);
-    g_object_unref(gc);
-    g_object_unref(b);
+    surface = cairo_image_surface_create(CAIRO_FORMAT_A1, w, h);
+    cr = cairo_create(surface);
+
+    /* Fill black (transparent) */
+    cairo_set_source_rgba(cr, 0, 0, 0, 0);
+    cairo_paint(cr);
+
+    /* Draw white (opaque) rounded rect */
+    cairo_set_source_rgba(cr, 1, 1, 1, 1);
+    cairo_move_to(cr, r, 0);
+    cairo_line_to(cr, w - r, 0);
+    cairo_arc(cr, w - r, r, r, -G_PI/2, 0);
+    cairo_line_to(cr, w, h - r);
+    cairo_arc(cr, w - r, h - r, r, 0, G_PI/2);
+    cairo_line_to(cr, r, h);
+    cairo_arc(cr, r, h - r, r, G_PI/2, G_PI);
+    cairo_line_to(cr, 0, r);
+    cairo_arc(cr, r, r, r, G_PI, 3*G_PI/2);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    cairo_destroy(cr);
+    region = gdk_cairo_region_create_from_surface(surface);
+    gtk_widget_shape_combine_region(p->topgwin, region);
+    cairo_region_destroy(region);
+    cairo_surface_destroy(surface);
 
     RET();
 }
@@ -587,11 +613,11 @@ panel_start_gui(panel *p)
     gtk_window_stick(GTK_WINDOW(p->topgwin));
 
     gtk_widget_realize(p->topgwin);
-    p->topxwin = GDK_WINDOW_XWINDOW(p->topgwin->window);
+    p->topxwin = GDK_WINDOW_XID(gtk_widget_get_window(p->topgwin));
     DBG("topxwin = %lx\n", p->topxwin);
     /* ensure configure event */
-    XMoveWindow(GDK_DISPLAY(), p->topxwin, 20, 20);
-    XSync(GDK_DISPLAY(), False);
+    XMoveWindow(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), p->topxwin, 20, 20);
+    XSync(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), False);
 
     gtk_widget_set_app_paintable(p->topgwin, TRUE);
     calculate_position(p);
@@ -633,7 +659,7 @@ panel_start_gui(panel *p)
     if (p->setstrut)
         panel_set_wm_strut(p);
 
-    XSelectInput(GDK_DISPLAY(), GDK_ROOT_WINDOW(), PropertyChangeMask);
+    XSelectInput(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), GDK_ROOT_WINDOW(), PropertyChangeMask);
     gdk_window_add_filter(gdk_get_default_root_window(),
           (GdkFilterFunc)panel_event_filter, p);
     //XSync(GDK_DISPLAY(), False);
@@ -694,8 +720,8 @@ panel_parse_global(xconf *xc)
     XCG(xc, "maxelemheight", &p->max_elem_height, int);
 
     /* Sanity checks */
-    if (!gdk_color_parse(p->tintcolor_name, &p->gtintcolor))
-        gdk_color_parse("white", &p->gtintcolor);
+    if (!gdk_rgba_parse(&p->gtintcolor, p->tintcolor_name))
+        gdk_rgba_parse(&p->gtintcolor, "white");
     p->tintcolor = gcolor2rgb24(&p->gtintcolor);
     DBG("tintcolor=%x\n", p->tintcolor);
     if (p->alpha > 255)
@@ -703,11 +729,11 @@ panel_parse_global(xconf *xc)
     p->orientation = (p->edge == EDGE_TOP || p->edge == EDGE_BOTTOM)
         ? GTK_ORIENTATION_HORIZONTAL : GTK_ORIENTATION_VERTICAL;
     if (p->orientation == GTK_ORIENTATION_HORIZONTAL) {
-        p->my_box_new = gtk_hbox_new;
-        p->my_separator_new = gtk_vseparator_new;
+        p->my_box_new = hbox_new;
+        p->my_separator_new = vseparator_new;
     } else {
-        p->my_box_new = gtk_vbox_new;
-        p->my_separator_new = gtk_hseparator_new;
+        p->my_box_new = vbox_new;
+        p->my_separator_new = hseparator_new;
     }
     if (p->width < 0)
         p->width = 100;
@@ -803,7 +829,7 @@ panel_stop(panel *p)
     g_list_free(p->plugins);
     p->plugins = NULL;
 
-    XSelectInput(GDK_DISPLAY(), GDK_ROOT_WINDOW(), NoEventMask);
+    XSelectInput(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), GDK_ROOT_WINDOW(), NoEventMask);
     gdk_window_remove_filter(gdk_get_default_root_window(),
           (GdkFilterFunc)panel_event_filter, p);
     gtk_widget_destroy(p->topgwin);
@@ -811,8 +837,8 @@ panel_stop(panel *p)
     g_object_unref(fbev);
     //g_free(p->workarea);
     gdk_flush();
-    XFlush(GDK_DISPLAY());
-    XSync(GDK_DISPLAY(), True);
+    XFlush(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()));
+    XSync(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), True);
     RET();
 }
 
@@ -841,7 +867,7 @@ handle_error(Display * d, XErrorEvent * ev)
     char buf[256];
 
     ENTER;
-    XGetErrorText(GDK_DISPLAY(), ev->error_code, buf, 256);
+    XGetErrorText(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), ev->error_code, buf, 256);
     DBG("fbpanel : X error: %s\n", buf);
 
     RET();
@@ -953,7 +979,6 @@ main(int argc, char *argv[])
     bindtextdomain(PROJECT_NAME, LOCALEDIR);
     textdomain(PROJECT_NAME);
 
-    gtk_set_locale();
     gtk_init(&argc, &argv);
     XSetLocaleModifiers("");
     XSetErrorHandler((XErrorHandler) handle_error);

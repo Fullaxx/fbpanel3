@@ -137,51 +137,52 @@ num2str(xconf_enum *p, int num, gchar *defval)
 
 void resolve_atoms()
 {
+    Display *dpy;
+
     ENTER;
+    dpy = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
 
-    a_UTF8_STRING                = XInternAtom(GDK_DISPLAY(), "UTF8_STRING", False);
-    a_XROOTPMAP_ID               = XInternAtom(GDK_DISPLAY(), "_XROOTPMAP_ID", False);
-    a_WM_STATE                   = XInternAtom(GDK_DISPLAY(), "WM_STATE", False);
-    a_WM_CLASS                   = XInternAtom(GDK_DISPLAY(), "WM_CLASS", False);
-    a_WM_DELETE_WINDOW           = XInternAtom(GDK_DISPLAY(), "WM_DELETE_WINDOW", False);
-    a_WM_PROTOCOLS               = XInternAtom(GDK_DISPLAY(), "WM_PROTOCOLS", False);
-    a_NET_WORKAREA               = XInternAtom(GDK_DISPLAY(), "_NET_WORKAREA", False);
-    a_NET_CLIENT_LIST            = XInternAtom(GDK_DISPLAY(), "_NET_CLIENT_LIST", False);
-    a_NET_CLIENT_LIST_STACKING   = XInternAtom(GDK_DISPLAY(), "_NET_CLIENT_LIST_STACKING", False);
-    a_NET_NUMBER_OF_DESKTOPS     = XInternAtom(GDK_DISPLAY(), "_NET_NUMBER_OF_DESKTOPS", False);
-    a_NET_CURRENT_DESKTOP        = XInternAtom(GDK_DISPLAY(), "_NET_CURRENT_DESKTOP", False);
-    a_NET_DESKTOP_NAMES          = XInternAtom(GDK_DISPLAY(), "_NET_DESKTOP_NAMES", False);
-    a_NET_DESKTOP_GEOMETRY       = XInternAtom(GDK_DISPLAY(), "_NET_DESKTOP_GEOMETRY", False);
-    a_NET_ACTIVE_WINDOW          = XInternAtom(GDK_DISPLAY(), "_NET_ACTIVE_WINDOW", False);
-    a_NET_SUPPORTED              = XInternAtom(GDK_DISPLAY(), "_NET_SUPPORTED", False);
-    a_NET_WM_DESKTOP             = XInternAtom(GDK_DISPLAY(), "_NET_WM_DESKTOP", False);
-    a_NET_WM_STATE               = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE", False);
-    a_NET_WM_STATE_SKIP_TASKBAR  = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE_SKIP_TASKBAR", False);
-    a_NET_WM_STATE_SKIP_PAGER    = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE_SKIP_PAGER", False);
-    a_NET_WM_STATE_STICKY        = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE_STICKY", False);
-    a_NET_WM_STATE_HIDDEN        = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE_HIDDEN", False);
-    a_NET_WM_STATE_SHADED        = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE_SHADED", False);
-    a_NET_WM_STATE_ABOVE         = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE_ABOVE", False);
-    a_NET_WM_STATE_BELOW         = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE_BELOW", False);
-    a_NET_WM_STATE_SHADED        = XInternAtom(GDK_DISPLAY(), "_NET_WM_STATE_SHADED", False);
-    a_NET_WM_WINDOW_TYPE         = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE", False);
+    a_UTF8_STRING                = XInternAtom(dpy, "UTF8_STRING", False);
+    a_XROOTPMAP_ID               = XInternAtom(dpy, "_XROOTPMAP_ID", False);
+    a_WM_STATE                   = XInternAtom(dpy, "WM_STATE", False);
+    a_WM_CLASS                   = XInternAtom(dpy, "WM_CLASS", False);
+    a_WM_DELETE_WINDOW           = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
+    a_WM_PROTOCOLS               = XInternAtom(dpy, "WM_PROTOCOLS", False);
+    a_NET_WORKAREA               = XInternAtom(dpy, "_NET_WORKAREA", False);
+    a_NET_CLIENT_LIST            = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
+    a_NET_CLIENT_LIST_STACKING   = XInternAtom(dpy, "_NET_CLIENT_LIST_STACKING", False);
+    a_NET_NUMBER_OF_DESKTOPS     = XInternAtom(dpy, "_NET_NUMBER_OF_DESKTOPS", False);
+    a_NET_CURRENT_DESKTOP        = XInternAtom(dpy, "_NET_CURRENT_DESKTOP", False);
+    a_NET_DESKTOP_NAMES          = XInternAtom(dpy, "_NET_DESKTOP_NAMES", False);
+    a_NET_DESKTOP_GEOMETRY       = XInternAtom(dpy, "_NET_DESKTOP_GEOMETRY", False);
+    a_NET_ACTIVE_WINDOW          = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+    a_NET_SUPPORTED              = XInternAtom(dpy, "_NET_SUPPORTED", False);
+    a_NET_WM_DESKTOP             = XInternAtom(dpy, "_NET_WM_DESKTOP", False);
+    a_NET_WM_STATE               = XInternAtom(dpy, "_NET_WM_STATE", False);
+    a_NET_WM_STATE_SKIP_TASKBAR  = XInternAtom(dpy, "_NET_WM_STATE_SKIP_TASKBAR", False);
+    a_NET_WM_STATE_SKIP_PAGER    = XInternAtom(dpy, "_NET_WM_STATE_SKIP_PAGER", False);
+    a_NET_WM_STATE_STICKY        = XInternAtom(dpy, "_NET_WM_STATE_STICKY", False);
+    a_NET_WM_STATE_HIDDEN        = XInternAtom(dpy, "_NET_WM_STATE_HIDDEN", False);
+    a_NET_WM_STATE_SHADED        = XInternAtom(dpy, "_NET_WM_STATE_SHADED", False);
+    a_NET_WM_STATE_ABOVE         = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
+    a_NET_WM_STATE_BELOW         = XInternAtom(dpy, "_NET_WM_STATE_BELOW", False);
+    a_NET_WM_WINDOW_TYPE         = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
 
-    a_NET_WM_WINDOW_TYPE_DESKTOP = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE_DESKTOP", False);
-    a_NET_WM_WINDOW_TYPE_DOCK    = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE_DOCK", False);
-    a_NET_WM_WINDOW_TYPE_TOOLBAR = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
-    a_NET_WM_WINDOW_TYPE_MENU    = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE_MENU", False);
-    a_NET_WM_WINDOW_TYPE_UTILITY = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE_UTILITY", False);
-    a_NET_WM_WINDOW_TYPE_SPLASH  = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE_SPLASH", False);
-    a_NET_WM_WINDOW_TYPE_DIALOG  = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE_DIALOG", False);
-    a_NET_WM_WINDOW_TYPE_NORMAL  = XInternAtom(GDK_DISPLAY(), "_NET_WM_WINDOW_TYPE_NORMAL", False);
-    a_NET_WM_DESKTOP             = XInternAtom(GDK_DISPLAY(), "_NET_WM_DESKTOP", False);
-    a_NET_WM_NAME                = XInternAtom(GDK_DISPLAY(), "_NET_WM_NAME", False);
-    a_NET_WM_VISIBLE_NAME        = XInternAtom(GDK_DISPLAY(), "_NET_WM_VISIBLE_NAME", False);
-    a_NET_WM_STRUT               = XInternAtom(GDK_DISPLAY(), "_NET_WM_STRUT", False);
-    a_NET_WM_STRUT_PARTIAL       = XInternAtom(GDK_DISPLAY(), "_NET_WM_STRUT_PARTIAL", False);
-    a_NET_WM_ICON                = XInternAtom(GDK_DISPLAY(), "_NET_WM_ICON", False);
+    a_NET_WM_WINDOW_TYPE_DESKTOP = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+    a_NET_WM_WINDOW_TYPE_DOCK    = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DOCK", False);
+    a_NET_WM_WINDOW_TYPE_TOOLBAR = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
+    a_NET_WM_WINDOW_TYPE_MENU    = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_MENU", False);
+    a_NET_WM_WINDOW_TYPE_UTILITY = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_UTILITY", False);
+    a_NET_WM_WINDOW_TYPE_SPLASH  = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_SPLASH", False);
+    a_NET_WM_WINDOW_TYPE_DIALOG  = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+    a_NET_WM_WINDOW_TYPE_NORMAL  = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_NORMAL", False);
+    a_NET_WM_NAME                = XInternAtom(dpy, "_NET_WM_NAME", False);
+    a_NET_WM_VISIBLE_NAME        = XInternAtom(dpy, "_NET_WM_VISIBLE_NAME", False);
+    a_NET_WM_STRUT               = XInternAtom(dpy, "_NET_WM_STRUT", False);
+    a_NET_WM_STRUT_PARTIAL       = XInternAtom(dpy, "_NET_WM_STRUT_PARTIAL", False);
+    a_NET_WM_ICON                = XInternAtom(dpy, "_NET_WM_ICON", False);
     a_KDE_NET_WM_SYSTEM_TRAY_WINDOW_FOR
-                                 = XInternAtom(GDK_DISPLAY(), "_KDE_NET_WM_SYSTEM_TRAY_WINDOW_FOR", False);
+                                 = XInternAtom(dpy, "_KDE_NET_WM_SYSTEM_TRAY_WINDOW_FOR", False);
 
     RET();
 }
@@ -207,7 +208,7 @@ Xclimsg(Window win, long type, long l0, long l1, long l2, long l3, long l4)
     xev.type = ClientMessage;
     xev.window = win;
     xev.send_event = True;
-    xev.display = gdk_display;
+    xev.display = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
     xev.message_type = type;
     xev.format = 32;
     xev.data.l[0] = l0;
@@ -215,7 +216,7 @@ Xclimsg(Window win, long type, long l0, long l1, long l2, long l3, long l4)
     xev.data.l[2] = l2;
     xev.data.l[3] = l3;
     xev.data.l[4] = l4;
-    XSendEvent(GDK_DISPLAY(), GDK_ROOT_WINDOW(), False,
+    XSendEvent(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), GDK_ROOT_WINDOW(), False,
           (SubstructureNotifyMask | SubstructureRedirectMask),
           (XEvent *) & xev);
 }
@@ -231,7 +232,7 @@ Xclimsgwm(Window win, Atom type, Atom arg)
     xev.format = 32;
     xev.data.l[0] = arg;
     xev.data.l[1] = GDK_CURRENT_TIME;
-    XSendEvent(GDK_DISPLAY(), win, False, 0L, (XEvent *) &xev);
+    XSendEvent(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, False, 0L, (XEvent *) &xev);
 }
 
 
@@ -249,7 +250,7 @@ get_utf8_property(Window win, Atom atom)
 
     type = None;
     retval = NULL;
-    result = XGetWindowProperty (GDK_DISPLAY(), win, atom, 0, G_MAXLONG, False,
+    result = XGetWindowProperty (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, atom, 0, G_MAXLONG, False,
           a_UTF8_STRING, &type, &format, &nitems,
           &bytes_after, &tmp);
     if (result != Success)
@@ -275,7 +276,7 @@ get_utf8_property_list(Window win, Atom atom, int *count)
     guchar *tmp = NULL;
 
     *count = 0;
-    result = XGetWindowProperty(GDK_DISPLAY(), win, atom, 0, G_MAXLONG, False,
+    result = XGetWindowProperty(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, atom, 0, G_MAXLONG, False,
           a_UTF8_STRING, &type, &format, &nitems,
           &bytes_after, &tmp);
     if (result != Success || type != a_UTF8_STRING || tmp == NULL)
@@ -319,7 +320,7 @@ get_xaproperty (Window win, Atom prop, Atom type, int *nitems)
 
     ENTER;
     prop_data = NULL;
-    if (XGetWindowProperty (GDK_DISPLAY(), win, prop, 0, 0x7fffffff, False,
+    if (XGetWindowProperty (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, prop, 0, 0x7fffffff, False,
               type, &type_ret, &format_ret, &items_ret,
               &after_ret, &prop_data) != Success)
         RET(NULL);
@@ -340,7 +341,8 @@ text_property_to_utf8 (const XTextProperty *prop)
 
   ENTER;
   list = NULL;
-  count = gdk_text_property_to_utf8_list (gdk_x11_xatom_to_atom (prop->encoding),
+  count = gdk_text_property_to_utf8_list_for_display (gdk_display_get_default(),
+                                          gdk_x11_xatom_to_atom (prop->encoding),
                                           prop->format,
                                           prop->value,
                                           prop->nitems,
@@ -365,7 +367,7 @@ get_textproperty(Window win, Atom atom)
     char *retval;
 
     ENTER;
-    if (XGetTextProperty(GDK_DISPLAY(), win, &text_prop, atom)) {
+    if (XGetTextProperty(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), win, &text_prop, atom)) {
         DBG("format=%d enc=%d nitems=%d value=%s   \n",
               text_prop.format,
               text_prop.encoding,
@@ -671,15 +673,15 @@ get_button_spacing(GtkRequisition *req, GtkContainer *parent, gchar *name)
     ENTER;
     b = gtk_button_new();
     gtk_widget_set_name(GTK_WIDGET(b), name);
-    GTK_WIDGET_UNSET_FLAGS (b, GTK_CAN_FOCUS);
-    GTK_WIDGET_UNSET_FLAGS (b, GTK_CAN_DEFAULT);
+    gtk_widget_set_can_focus(b, FALSE);
+    gtk_widget_set_can_default(b, FALSE);
     gtk_container_set_border_width (GTK_CONTAINER (b), 0);
 
     if (parent)
         gtk_container_add(parent, b);
 
     gtk_widget_show(b);
-    gtk_widget_size_request(b, req);
+    gtk_widget_get_preferred_size(b, req, NULL);
 
     gtk_widget_destroy(b);
     RET();
@@ -687,37 +689,26 @@ get_button_spacing(GtkRequisition *req, GtkContainer *parent, gchar *name)
 
 
 guint32
-gcolor2rgb24(GdkColor *color)
+gcolor2rgb24(GdkRGBA *color)
 {
     guint32 i;
 
     ENTER;
-#ifdef DEBUGPRN
-    {
-        guint16 r, g, b;
-
-        r = color->red * 0xFF / 0xFFFF;
-        g = color->green * 0xFF / 0xFFFF;
-        b = color->blue * 0xFF / 0xFFFF;
-        DBG("%x %x %x ==> %x %x %x\n", color->red, color->green, color->blue,
-            r, g, b);
-    }
-#endif
-    i = (color->red * 0xFF / 0xFFFF) & 0xFF;
+    i  = ((guint32)(color->red   * 255)) & 0xFF;
     i <<= 8;
-    i |= (color->green * 0xFF / 0xFFFF) & 0xFF;
+    i |= ((guint32)(color->green * 255)) & 0xFF;
     i <<= 8;
-    i |= (color->blue * 0xFF / 0xFFFF) & 0xFF;
+    i |= ((guint32)(color->blue  * 255)) & 0xFF;
     DBG("i=%x\n", i);
     RET(i);
 }
 
 gchar *
-gdk_color_to_RRGGBB(GdkColor *color)
+gdk_color_to_RRGGBB(GdkRGBA *color)
 {
     static gchar str[10]; // #RRGGBB + \0
     g_snprintf(str, sizeof(str), "#%02x%02x%02x",
-        color->red >> 8, color->green >> 8, color->blue >> 8);
+        (int)(color->red * 255), (int)(color->green * 255), (int)(color->blue * 255));
     return str;
 }
 
@@ -745,18 +736,25 @@ menu_pos(GtkMenu *menu, gint *x, gint *y, gboolean *push_in, GtkWidget *widget)
     /* Calculate a requested location based on the widget/mouse location,
      * relative to the root window. */
     if (widget) {
-        gdk_window_get_origin(widget->window, &menuRect.x, &menuRect.y);
-        menuRect.x += widget->allocation.x;
-        menuRect.y += widget->allocation.y;
+        GtkAllocation alloc;
+        gdk_window_get_origin(gtk_widget_get_window(widget), &menuRect.x, &menuRect.y);
+        gtk_widget_get_allocation(widget, &alloc);
+        menuRect.x += alloc.x;
+        menuRect.y += alloc.y;
     } else {
-        gdk_display_get_pointer(gdk_display_get_default(), NULL, 
-                                &menuRect.x, &menuRect.y, NULL);
+        GdkSeat *seat = gdk_display_get_default_seat(gdk_display_get_default());
+        GdkDevice *pointer = gdk_seat_get_pointer(seat);
+        gdk_device_get_position(pointer, NULL, &menuRect.x, &menuRect.y);
         menuRect.x -= 20;
         menuRect.y -= 20;
     }
 
-    menuRect.width = GTK_WIDGET(menu)->requisition.width;
-    menuRect.height = GTK_WIDGET(menu)->requisition.height;
+    {
+        GtkRequisition min_req, nat_req;
+        gtk_widget_get_preferred_size(GTK_WIDGET(menu), &min_req, &nat_req);
+        menuRect.width = nat_req.width;
+        menuRect.height = nat_req.height;
+    }
 
     /* If "menuRect" does not fall within "validRect", then move "menuRect"
      * to fit. */
@@ -1020,7 +1018,7 @@ fb_button_new(gchar *iname, gchar *fname, int width, int height,
     ENTER;
     b = gtk_bgbox_new();
     gtk_container_set_border_width(GTK_CONTAINER(b), 0);
-    GTK_WIDGET_UNSET_FLAGS (b, GTK_CAN_FOCUS);
+    gtk_widget_set_can_focus(b, FALSE);
     image = fb_image_new(iname, fname, width, height);
     gtk_misc_set_alignment(GTK_MISC(image), 0.5, 0.5);
     gtk_misc_set_padding (GTK_MISC(image), 0, 0);
@@ -1080,8 +1078,10 @@ fb_button_pressed(GtkWidget *widget, GdkEventButton *event)
     if (event->type == GDK_BUTTON_PRESS) {
         i = 2;
     } else {
-        if ((event->x >=0 && event->x < widget->allocation.width)
-                && (event->y >=0 && event->y < widget->allocation.height))
+        GtkAllocation alloc;
+        gtk_widget_get_allocation(widget, &alloc);
+        if ((event->x >=0 && event->x < alloc.width)
+                && (event->y >=0 && event->y < alloc.height))
             i = 1;
         else
             i = 0;

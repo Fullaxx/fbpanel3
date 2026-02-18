@@ -12,8 +12,8 @@
 
 typedef struct {
     plugin_instance plugin;
-    GdkPixmap *pix;
-    GdkBitmap *mask;
+    cairo_surface_t *pix;
+    void *mask;
     GtkWidget *mainw;
 } image_priv;
 
@@ -26,10 +26,8 @@ image_destructor(plugin_instance *p)
 
     ENTER;
     gtk_widget_destroy(img->mainw);
-    if (img->mask)
-        g_object_unref(img->mask);
     if (img->pix)
-        g_object_unref(img->pix);
+        cairo_surface_destroy(img->pix);
     RET();
 }
 
@@ -51,8 +49,6 @@ image_constructor(plugin_instance *p)
     
     img->mainw = gtk_event_box_new();
     gtk_widget_show(img->mainw);
-    //g_signal_connect(G_OBJECT(img->mainw), "expose_event",
-    //      G_CALLBACK(gtk_widget_queue_draw), NULL);
     gp = gdk_pixbuf_new_from_file(fname, &err);
     if (!gp) {
         g_warning("image: can't read image %s\n", fname);
@@ -67,11 +63,9 @@ image_constructor(plugin_instance *p)
               ratio * ((float) gdk_pixbuf_get_width(gp)),
               ratio * ((float) gdk_pixbuf_get_height(gp)),
               GDK_INTERP_HYPER);
-        gdk_pixbuf_render_pixmap_and_mask(gps, &img->pix, &img->mask, 127);
         g_object_unref(gp);
+        wid = gtk_image_new_from_pixbuf(gps);
         g_object_unref(gps);
-        wid = gtk_image_new_from_pixmap(img->pix, img->mask);
-
     }
     gtk_widget_show(wid);
     gtk_container_add(GTK_CONTAINER(img->mainw), wid);

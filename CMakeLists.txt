@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.5)
-project(fbpanel VERSION 7.0 LANGUAGES C)
+project(fbpanel VERSION 8.0 LANGUAGES C)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 set(CMAKE_COLOR_MAKEFILE OFF)
-set(CMAKE_PROJECT_VERSION "7.2")
+set(CMAKE_PROJECT_VERSION "8.0")
 
 include(GNUInstallDirs)
 find_package(X11 REQUIRED)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(MODULES REQUIRED gmodule-2.0 gtk+-2.0 )
+pkg_check_modules(MODULES REQUIRED gmodule-2.0 gtk+-3.0 )
 
 # we need this header in order to build target
 configure_file ( "${PROJECT_SOURCE_DIR}/config.h.in" "${PROJECT_SOURCE_DIR}/config.h")
@@ -32,7 +32,7 @@ foreach(PLUGIN ${PLUGINS})
     file(GLOB PLUGIN_HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} plugins/${PLUGIN}/*.h)
     add_library               (${PLUGIN}        SHARED  ${PLUGIN_SOURCES} ${PLUGIN_HEADERS} ${FBPANEL_HEADERS})
     target_include_directories(${PLUGIN}        PUBLIC  panel .)
-# put system here to suppress deprecation warns relating gtk2 and newer glib
+# use SYSTEM to suppress upstream header warnings (not our code)
     target_include_directories(${PLUGIN} SYSTEM PRIVATE ${MODULES_INCLUDE_DIRS})
 #    target_link_libraries     (${PLUGIN}        PRIVATE ${X11_LIBRARIES} ${MODULES_LIBRARIES} -Wl,--no-undefined)
     target_link_libraries     (${PLUGIN}        PRIVATE ${X11_LIBRARIES} ${MODULES_LIBRARIES} -Wl,--warn-unresolved-symbols)

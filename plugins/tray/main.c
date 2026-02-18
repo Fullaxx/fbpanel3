@@ -31,8 +31,11 @@ static void
 tray_bg_changed(FbBg *bg, GtkWidget *widget)
 {
     ENTER;
-    gtk_widget_set_size_request(widget, widget->allocation.width,
-        widget->allocation.height);
+    {
+        GtkAllocation alloc;
+        gtk_widget_get_allocation(widget, &alloc);
+        gtk_widget_set_size_request(widget, alloc.width, alloc.height);
+    }
     gtk_widget_hide(widget);
     if (gtk_events_pending())
         gtk_main_iteration();
@@ -69,7 +72,7 @@ message_sent (EggTrayManager *manager, GtkWidget *icon, const char *text,
     int x, y;
     
     ENTER;
-    gdk_window_get_origin (icon->window, &x, &y);
+    gdk_window_get_origin (gtk_widget_get_window(icon), &x, &y);
     fixed_tip_show (0, x, y, FALSE, gdk_screen_height () - 50, text);
     RET();
 }

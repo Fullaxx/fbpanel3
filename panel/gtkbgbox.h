@@ -29,7 +29,7 @@
 
 
 #include <gdk/gdk.h>
-#include <gtk/gtkbin.h>
+#include <gtk/gtk.h>
 #include "bg.h"
 
 #ifdef __cplusplus

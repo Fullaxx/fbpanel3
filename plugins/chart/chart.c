@@ -38,9 +38,9 @@
 
 
 static void chart_add_tick(chart_priv *c, float *val);
-static void chart_draw(chart_priv *c);
+static void chart_draw(chart_priv *c, cairo_t *cr);
 static void chart_size_allocate(GtkWidget *widget, GtkAllocation *a, chart_priv *c);
-static gint chart_expose_event(GtkWidget *widget, GdkEventExpose *event, chart_priv *c);
+static gboolean chart_draw_event(GtkWidget *widget, cairo_t *cr, chart_priv *c);
 
 static void chart_alloc_ticks(chart_priv *c);
 static void chart_free_ticks(chart_priv *c);
@@ -70,21 +70,25 @@ chart_add_tick(chart_priv *c, float *val)
 }
 
 static void
-chart_draw(chart_priv *c)
+chart_draw(chart_priv *c, cairo_t *cr)
 {
     int j, i, y;
 
     ENTER;
-    if (!c->ticks)
+    if (!c->ticks || !c->gc_cpu)
         RET();
     for (i = 1; i < c->w-1; i++) {
         y = c->h-2;
         for (j = 0; j < c->rows; j++) {
             int val;
-	
+
             val = c->ticks[j][(i + c->pos) % c->w];
-            if (val)
-                gdk_draw_line(c->da->window, c->gc_cpu[j], i, y, i, y - val);
+            if (val) {
+                gdk_cairo_set_source_rgba(cr, &c->gc_cpu[j]);
+                cairo_move_to(cr, i, y);
+                cairo_line_to(cr, i, y - val);
+                cairo_stroke(cr);
+            }
             y -= val;
         }
     }
@@ -126,22 +130,16 @@ chart_size_allocate(GtkWidget *widget, GtkAllocation *a, chart_priv *c)
 }
 
 
-static gint
-chart_expose_event(GtkWidget *widget, GdkEventExpose *event, chart_priv *c)
+static gboolean
+chart_draw_event(GtkWidget *widget, cairo_t *cr, chart_priv *c)
 {
+    GtkStyleContext *ctx;
     ENTER;
-    gdk_window_clear(widget->window);
-    chart_draw(c);
+    chart_draw(c, cr);
 
-    gtk_paint_shadow(widget->style, widget->window,
-        widget->state, GTK_SHADOW_ETCHED_IN,
-        &c->area, widget, "frame", c->fx, c->fy, c->fw, c->fh);
+    ctx = gtk_widget_get_style_context(widget);
+    gtk_render_frame(ctx, cr, c->fx, c->fy, c->fw, c->fh);
 
-#if 0
-    gdk_draw_rectangle(widget->window, 
-        widget->style->bg_gc[GTK_STATE_NORMAL],
-        FALSE, 0, 0, c->w-1, c->h-1);
-#endif    
     RET(FALSE);
 }
 
@@ -183,19 +181,13 @@ chart_free_ticks(chart_priv *c)
 static void
 chart_alloc_gcs(chart_priv *c, gchar *colors[])
 {
-    int i;  
-    GdkColor color;
+    int i;
 
     ENTER;
-    c->gc_cpu = g_new0( typeof(*c->gc_cpu), c->rows);
+    c->gc_cpu = g_new0(GdkRGBA, c->rows);
     if (c->gc_cpu) {
         for (i = 0; i < c->rows; i++) {
-            c->gc_cpu[i] = gdk_gc_new(c->plugin.panel->topgwin->window);
-            gdk_color_parse(colors[i], &color);
-            gdk_colormap_alloc_color(
-                gdk_drawable_get_colormap(c->plugin.panel->topgwin->window),
-                &color, FALSE, TRUE);
-            gdk_gc_set_foreground(c->gc_cpu[i],  &color);
+            gdk_rgba_parse(&c->gc_cpu[i], colors[i]);
         }
     }
     RET();
@@ -206,12 +198,8 @@ chart_alloc_gcs(chart_priv *c, gchar *colors[])
 static void
 chart_free_gcs(chart_priv *c)
 {
-    int i;  
-
     ENTER;
     if (c->gc_cpu) {
-        for (i = 0; i < c->rows; i++) 
-            g_object_unref(c->gc_cpu[i]);            
         g_free(c->gc_cpu);
         c->gc_cpu = NULL;
     }
@@ -250,8 +238,8 @@ chart_constructor(plugin_instance *p)
     g_signal_connect (G_OBJECT (p->pwid), "size-allocate",
           G_CALLBACK (chart_size_allocate), (gpointer) c);
 
-    g_signal_connect_after (G_OBJECT (p->pwid), "expose-event",
-          G_CALLBACK (chart_expose_event), (gpointer) c);
+    g_signal_connect_after (G_OBJECT (p->pwid), "draw",
+          G_CALLBACK (chart_draw_event), (gpointer) c);
     
     RET(1);
 }

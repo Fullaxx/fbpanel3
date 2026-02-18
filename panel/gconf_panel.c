@@ -53,7 +53,7 @@ mk_effects_block(xconf *xc)
 
     /* label */
     w = gtk_label_new(NULL);
-    gtk_misc_set_alignment(GTK_MISC(w), 0, 0.5);
+    gtk_widget_set_halign(w, GTK_ALIGN_START); gtk_widget_set_valign(w, GTK_ALIGN_CENTER);
     gtk_label_set_markup(GTK_LABEL(w), _("<b>Visual Effects</b>"));
     gconf_block_add(gl_block, w, TRUE);
 
@@ -134,7 +134,7 @@ mk_prop_block(xconf *xc)
 
     /* label */
     w = gtk_label_new(NULL);
-    gtk_misc_set_alignment(GTK_MISC(w), 0, 0.5);
+    gtk_widget_set_halign(w, GTK_ALIGN_START); gtk_widget_set_valign(w, GTK_ALIGN_CENTER);
     gtk_label_set_markup(GTK_LABEL(w), _("<b>Properties</b>"));
     gconf_block_add(gl_block, w, TRUE);
 
@@ -188,10 +188,15 @@ geom_changed(gconf_block *b)
     if (i == WIDTH_PERCENT)
         gtk_spin_button_set_range(GTK_SPIN_BUTTON(width_spin), 0, 100);
     else if (i == WIDTH_PIXEL) {
+        GdkRectangle  geometry;
+        GdkDisplay   *display = gtk_widget_get_display(b->main);
+        GdkWindow    *window  = gtk_widget_get_window(b->main);
+        GdkMonitor   *monitor = gdk_display_get_monitor_at_window(display, window);
+        gdk_monitor_get_geometry(monitor, &geometry);
         XCG(b->data, "edge", &j, enum, edge_enum);
         gtk_spin_button_set_range(GTK_SPIN_BUTTON(width_spin), 0,
             (j == EDGE_RIGHT || j == EDGE_LEFT)
-            ? gdk_screen_height() : gdk_screen_width());
+            ? geometry.height : geometry.width);
     }
     RET();
 }
@@ -205,7 +210,7 @@ mk_geom_block(xconf *xc)
 
     /* label */
     w = gtk_label_new(NULL);
-    gtk_misc_set_alignment(GTK_MISC(w), 0, 0.5);
+    gtk_widget_set_halign(w, GTK_ALIGN_START); gtk_widget_set_valign(w, GTK_ALIGN_CENTER);
     gtk_label_set_markup(GTK_LABEL(w), _("<b>Geometry</b>"));
     gconf_block_add(gl_block, w, TRUE);
 
@@ -259,7 +264,7 @@ mk_tab_global(xconf *xc)
     GtkWidget *page;
 
     ENTER;
-    page = gtk_vbox_new(FALSE, 1);
+    page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
     gtk_container_set_border_width(GTK_CONTAINER(page), 10);
     gl_block = gconf_block_new(NULL, NULL, 0);
     gtk_box_pack_start(GTK_BOX(page), gl_block->main, FALSE, TRUE, 0);
@@ -284,7 +289,7 @@ mk_tab_profile(xconf *xc)
     gchar *s1;
 
     ENTER;
-    page = gtk_vbox_new(FALSE, 1);
+    page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
     gtk_container_set_border_width(GTK_CONTAINER(page), 10);
 
     s1 = g_strdup_printf(_("You're using '<b>%s</b>' profile, stored at\n"
@@ -356,15 +361,12 @@ mk_dialog(xconf *oxc)
     //name = g_strdup_printf("fbpanel settings: <%s> profile", cprofile);
     name = g_strdup_printf("fbpanel settings: <%s> profile",
         panel_get_profile());
-    dialog = gtk_dialog_new_with_buttons (name,
+    dialog = gtk_dialog_new_with_buttons(name,
         NULL,
-        GTK_DIALOG_NO_SEPARATOR, //GTK_DIALOG_DESTROY_WITH_PARENT,
-        GTK_STOCK_APPLY,
-        GTK_RESPONSE_APPLY,
-        GTK_STOCK_OK,
-        GTK_RESPONSE_OK,
-        GTK_STOCK_CLOSE,
-        GTK_RESPONSE_CLOSE,
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        _("_Apply"),  GTK_RESPONSE_APPLY,
+        _("_OK"),     GTK_RESPONSE_OK,
+        _("_Close"),  GTK_RESPONSE_CLOSE,
         NULL);
     g_free(name);
     DBG("connecting sugnal to %p\n",  dialog);
@@ -387,21 +389,30 @@ mk_dialog(xconf *oxc)
 
     nb = gtk_notebook_new();
     gtk_notebook_set_show_border (GTK_NOTEBOOK(nb), FALSE);
-    gtk_container_add (GTK_CONTAINER (GTK_DIALOG(dialog)->vbox), nb);
+    gtk_container_add (GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), nb);
 
     sw = mk_tab_global(xconf_get(xc, "global"));
     label = gtk_label_new(_("Panel"));
-    gtk_misc_set_padding(GTK_MISC(label), 4, 1);
+    gtk_widget_set_margin_start(label, 4);
+    gtk_widget_set_margin_end(label, 4);
+    gtk_widget_set_margin_top(label, 1);
+    gtk_widget_set_margin_bottom(label, 1);
     gtk_notebook_append_page(GTK_NOTEBOOK(nb), sw, label);
 
     sw = mk_tab_plugins(xc);
     label = gtk_label_new(_("Plugins"));
-    gtk_misc_set_padding(GTK_MISC(label), 4, 1);
+    gtk_widget_set_margin_start(label, 4);
+    gtk_widget_set_margin_end(label, 4);
+    gtk_widget_set_margin_top(label, 1);
+    gtk_widget_set_margin_bottom(label, 1);
     gtk_notebook_append_page(GTK_NOTEBOOK(nb), sw, label);
 
     sw = mk_tab_profile(xc);
     label = gtk_label_new(_("Profile"));
-    gtk_misc_set_padding(GTK_MISC(label), 4, 1);
+    gtk_widget_set_margin_start(label, 4);
+    gtk_widget_set_margin_end(label, 4);
+    gtk_widget_set_margin_top(label, 1);
+    gtk_widget_set_margin_bottom(label, 1);
     gtk_notebook_append_page(GTK_NOTEBOOK(nb), sw, label);
 
     gtk_widget_show_all(dialog);

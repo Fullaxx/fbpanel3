@@ -39,13 +39,13 @@ typedef struct _panel
     GtkWidget *box;               /* box that contains all plugins */
     GtkWidget *menu;              /* context menu */
     GtkRequisition requisition;
-    GtkWidget *(*my_box_new) (gboolean, gint);
+    GtkWidget *(*my_box_new) (GtkOrientation orientation, gint spacing);
     GtkWidget *(*my_separator_new) ();
 
     FbBg *bg;
     int alpha;
     guint32 tintcolor;
-    GdkColor gtintcolor;
+    GdkRGBA gtintcolor;
     gchar *tintcolor_name;
 
     int ax, ay, aw, ah;  /* prefferd allocation of a panel */
@@ -184,7 +184,7 @@ extern int verbose;
 extern gint force_quit;
 extern FbEv *fbev;
 extern GtkIconTheme *icon_theme;
-#define FBPANEL_WIN(win)  gdk_window_lookup(win)
+#define FBPANEL_WIN(win)  gdk_x11_window_lookup_for_display(gdk_display_get_default(), win)
 void panel_set_wm_strut(panel *p);
 
 gchar *panel_get_profile(void);

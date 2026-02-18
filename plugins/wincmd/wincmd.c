@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #include <gdk-pixbuf/gdk-pixbuf.h>
+#include <gdk/gdkx.h>
 
 #include "panel.h"
 #include "misc.h"
@@ -12,8 +13,6 @@
 
 typedef struct {
     plugin_instance plugin;
-    GdkPixmap *pix;
-    GdkBitmap *mask;
     int button1, button2;
     int action1, action2;
 } wincmd_priv;
@@ -112,10 +111,11 @@ toggle_iconify(wincmd_priv *wc)
         awin[j++] = win[i];
     }
     while (j-- > 0) {
-        if (raise) 
-            XMapWindow (GDK_DISPLAY(), awin[j]);
+        if (raise)
+            XMapWindow (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), awin[j]);
         else
-            XIconifyWindow(GDK_DISPLAY(), awin[j], DefaultScreen(GDK_DISPLAY()));
+            XIconifyWindow(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), awin[j],
+                DefaultScreen(GDK_DISPLAY_XDISPLAY(gdk_display_get_default())));
     }
     
     g_free(awin);
@@ -149,13 +149,7 @@ clicked (GtkWidget *widget, GdkEventButton *event, gpointer data)
 static void
 wincmd_destructor(plugin_instance *p)
 {
-    wincmd_priv *wc = (wincmd_priv *)p;
-
     ENTER;
-    if (wc->mask)
-        g_object_unref(wc->mask);
-    if (wc->pix)
-        g_object_unref(wc->pix);
     RET();
 }
 

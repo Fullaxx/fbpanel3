@@ -281,7 +281,7 @@ only WM_HINTS icons (not NetWM `_NET_WM_ICON`) show no icon in the pager.
 | `panel/misc.c` | None | None | Clean |
 | `panel/widgets.c` | None | None | Clean |
 | `panel/ev.c` | None | None | Clean |
-| `plugins/taskbar/taskbar_ui.c` | H-1 (filter), H-2 | H-1, H-2 fix needed | Fix in v8.3.9 / v8.3.10 |
+| `plugins/taskbar/taskbar_ui.c` | H-2 | ~~H-1~~ (fixed v8.3.9), H-2 fix needed | Fix H-2 in v8.3.10 |
 | `plugins/taskbar/taskbar_task.c` | None | None | Clean |
 | `plugins/taskbar/taskbar_net.c` | None | None | Clean |
 | `plugins/taskbar/taskbar.c` | None | None | Clean |

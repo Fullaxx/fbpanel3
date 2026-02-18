@@ -203,9 +203,19 @@ tk_build_gui(taskbar_priv *tb, task *tk)
      *
      * Do not change event mask to gtk windows spwaned by this gtk client
      * this breaks gtk internals */
-    if (!FBPANEL_WIN(tk->win))
+    if (!FBPANEL_WIN(tk->win)) {
         XSelectInput(GDK_DPY, tk->win,
                 PropertyChangeMask | StructureNotifyMask);
+        /* Attach a per-window GDK filter instead of the deprecated global
+         * gdk_window_add_filter(NULL,...).  tb_event_filter only handles
+         * PropertyNotify on tracked windows; root-window events go through
+         * fbev signals and do not need this filter. */
+        tk->gdkwin = gdk_x11_window_foreign_new_for_display(
+                gdk_display_get_default(), tk->win);
+        if (tk->gdkwin)
+            gdk_window_add_filter(tk->gdkwin,
+                    (GdkFilterFunc)tb_event_filter, tb);
+    }
 
     /* button */
     tk->button = gtk_button_new();
@@ -418,8 +428,6 @@ taskbar_build_gui(plugin_instance *p)
     gtk_widget_show_all(tb->bar);
 
     tb->gen_pixbuf = gdk_pixbuf_new_from_xpm_data((const char **)icon_xpm);
-
-    gdk_window_add_filter(NULL, (GdkFilterFunc)tb_event_filter, tb );
 
     g_signal_connect (G_OBJECT (fbev), "current_desktop",
           G_CALLBACK (tb_net_current_desktop), (gpointer) tb);

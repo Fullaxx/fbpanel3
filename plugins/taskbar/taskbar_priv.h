@@ -37,6 +37,7 @@ typedef struct _taskbar taskbar_priv;
 struct _task {
     struct _taskbar *tb;
     Window win;
+    GdkWindow *gdkwin;          /* GDK wrapper for win; used for per-window event filter */
     char *name, *iname;
     GtkWidget *button, *label, *eb;
     GtkWidget *image;

@@ -97,6 +97,11 @@ del_task (taskbar_priv * tb, task *tk, int hdel)
     DBG("deleting(%d)  %08x %s\n", hdel, tk->win, tk->name);
     if (tk->flash_timeout)
         g_source_remove(tk->flash_timeout);
+    if (tk->gdkwin) {
+        gdk_window_remove_filter(tk->gdkwin,
+                (GdkFilterFunc)tb_event_filter, tb);
+        g_object_unref(tk->gdkwin);
+    }
     gtk_widget_destroy(tk->button);
     tb->num_tasks--;
     tk_free_names(tk);

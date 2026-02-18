@@ -1,3 +1,11 @@
+## Version: 8.3.9
+* Replace deprecated global gdk_window_add_filter(NULL,...) in taskbar with
+  per-window filters on each tracked client window.  tb_event_filter only
+  handles PropertyNotify on tracked windows; root-window property events
+  already flow through fbev signals.  A GdkWindow wrapper is created via
+  gdk_x11_window_foreign_new_for_display() when a window is tracked and
+  released (with the filter removed) in del_task when the window is removed.
+
 ## Version: 8.3.8
 * Remove deprecated gdk_window_add_filter() from gtkbgbox.c: the
   gtk_bgbox_event_filter function caught ConfigureNotify X events to call

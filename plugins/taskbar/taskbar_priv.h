@@ -13,6 +13,14 @@
 #include <gdk/gdkx.h>
 #include <cairo/cairo-xlib.h>
 
+/* The PLUGIN macro in plugin.h emits a __attribute__((constructor)) ctor()
+ * that calls class_register(class_ptr) when the .so is dlopen'd.  For
+ * single-file plugins this works fine, but taskbar is split across 4 TUs
+ * that are all compiled with -DPLUGIN.  Without this undef, each TU gets
+ * its own ctor() with its own NULL class_ptr → class_register(NULL) →
+ * segfault at p->type (offset 0x20).  Suppress the macro here; taskbar.c
+ * registers the class manually. */
+#undef PLUGIN
 #include "panel.h"
 #include "misc.h"
 #include "plugin.h"

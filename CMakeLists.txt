@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(fbpanel VERSION 8.3.3 LANGUAGES C)
+project(fbpanel VERSION 8.3.4 LANGUAGES C)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 set(CMAKE_COLOR_MAKEFILE OFF)
 

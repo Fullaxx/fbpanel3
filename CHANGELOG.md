@@ -1,3 +1,12 @@
+## Version: 8.3.4
+* Fix segfault at startup (address 0x20 = NULL->type in class_register):
+  taskbar is split across 4 TUs all compiled with -DPLUGIN; the PLUGIN macro
+  in plugin.h emits a constructor-attribute ctor() with a static class_ptr in
+  every TU — 3 of the 4 have class_ptr==NULL, so class_register(NULL) crashes.
+  Fix: #undef PLUGIN in taskbar_priv.h and register the class manually in
+  taskbar.c only.
+
+
 ## Version: 8.3.3
 * Fix crash on startup: gtk_bgbox_realize() called parent class realize() which
   chains to gtk_widget_real_realize() — that function asserts the widget does

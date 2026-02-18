@@ -111,3 +111,10 @@ static plugin_class class = {
 };
 
 static plugin_class *class_ptr = (plugin_class *) &class;
+
+/* Manual class registration — the PLUGIN macro ctor/dtor are suppressed in
+ * taskbar_priv.h because this plugin spans 4 TUs (see comment there). */
+static void ctor(void) __attribute__ ((constructor));
+static void ctor(void) { class_register(class_ptr); }
+static void dtor(void) __attribute__ ((destructor));
+static void dtor(void) { class_unregister(class_ptr); }

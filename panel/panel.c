@@ -181,25 +181,18 @@ panel_destroy_event(GtkWidget * widget, GdkEvent * event, gpointer data)
 }
 
 static void
-panel_size_req(GtkWidget *widget, GtkRequisition *req, panel *p)
-{
-    DBG("IN req=(%d, %d)\n", req->width, req->height);
-    if (p->widthtype == WIDTH_REQUEST)
-        p->width = (p->orientation == GTK_ORIENTATION_HORIZONTAL) ? req->width : req->height;
-    if (p->heighttype == HEIGHT_REQUEST)
-        p->height = (p->orientation == GTK_ORIENTATION_HORIZONTAL) ? req->height : req->width;
-    calculate_position(p);
-    req->width  = p->aw;
-    req->height = p->ah;
-    DBG("OUT req=(%d, %d)\n", req->width, req->height);
-    return;
-}
-
-
-static void
-panel_size_alloc (GtkWidget *widget, GdkRectangle *a, gpointer data)
+panel_size_alloc(GtkWidget *widget, GdkRectangle *a, panel *p)
 {
     DBG("alloc %d %d\n", a->width, a->height);
+    /* GTK3 replacement for the removed 'size-request' signal:
+     * when widthtype/heighttype == REQUEST the panel tracks its content.
+     * Update p->width/height from the actual allocation then reposition. */
+    if (p->widthtype == WIDTH_REQUEST)
+        p->width = (p->orientation == GTK_ORIENTATION_HORIZONTAL) ? a->width : a->height;
+    if (p->heighttype == HEIGHT_REQUEST)
+        p->height = (p->orientation == GTK_ORIENTATION_HORIZONTAL) ? a->height : a->width;
+    calculate_position(p);
+    gtk_window_move(GTK_WINDOW(p->topgwin), p->ax, p->ay);
 }
 
 
@@ -549,8 +542,6 @@ panel_start_gui(panel *p)
     gtk_container_set_border_width(GTK_CONTAINER(p->topgwin), 0);
     g_signal_connect(G_OBJECT(p->topgwin), "destroy-event",
         (GCallback) panel_destroy_event, p);
-    g_signal_connect(G_OBJECT(p->topgwin), "size-request",
-        (GCallback) panel_size_req, p);
     g_signal_connect(G_OBJECT(p->topgwin), "size-allocate",
         (GCallback) panel_size_alloc, p);
     g_signal_connect(G_OBJECT(p->topgwin), "map-event",

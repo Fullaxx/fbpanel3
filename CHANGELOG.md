@@ -1,3 +1,10 @@
+## Version: 8.3.2
+* Fix crash on startup: remove GTK2 'size-request' signal connection (signal
+  does not exist in GTK3 for GtkWindow, causing a fatal assertion in realize)
+* Replace with GTK3-correct 'size-allocate' handler that preserves
+  widthtype=request / heighttype=request dynamic sizing behaviour
+
+
 ## Version: 8.3.1
 * Fix build error: restore #include "dbg.h" in battery.c for DBG() calls
   in the included os_linux.c.inc (caught by gcc on Debian trixie)

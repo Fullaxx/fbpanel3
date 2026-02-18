@@ -1,3 +1,42 @@
+## Version: 8.3.0
+* Remove 756 ENTER/RET macro invocations (vestigial GTK1-era tracing)
+* Remove all #if 0 dead-code blocks (8 GTK2-era blocks across 5 files)
+* Remove unused menu_pos() function and extern panel *the_panel from misc.c
+* Split taskbar.c (1422 lines) into taskbar.c / taskbar_net.c / taskbar_task.c / taskbar_ui.c + shared taskbar_priv.h
+* Split misc.c: image/button/calendar widgets moved to panel/widgets.c + widgets.h
+* Document plugin.h: lifecycle comments, field annotations, minimal example
+* Add CLAUDE.md: instructions for version/changelog discipline in Claude Code sessions
+* Remove #include "dbg.h" from 10 files that no longer use any DBG/ERR macros
+
+
+## Version: 8.2.0
+* Fix all deferred GTK3 deprecated-API warnings (zero warnings achieved):
+  - gdk_window_set_background_pattern → cairo draw() vfunc in gtkbgbox.c
+  - gtk_image_menu_item_* → gtk_menu_item_* in panel.c, taskbar.c, menu.c
+  - gtk_menu_popup → gtk_menu_popup_at_pointer (panel.c, taskbar.c, menu.c)
+  - gtk_rc_parse_string → GtkCssProvider (taskbar.c, launchbar.c)
+  - gtk_widget_set_state / GtkStateType → gtk_widget_set_state_flags / GtkStateFlags (taskbar.c)
+  - gdk_display_get_pointer → GdkSeat API (panel.c)
+  - gdk_display_get_screen → gdk_display_get_default_screen (eggtraymanager.c)
+  - gtk_color_button_get_alpha → GdkRGBA.alpha (gconf.c)
+  - gtk_misc_set_alignment/padding → gtk_widget_set_halign/valign (meter.c)
+  - gtk_alignment_new → halign/valign on child widget (launchbar.c)
+  - gtk_window_set_wmclass removed (panel.c)
+* Add libcairo2-dev to all 6 fbpanel_builder Dockerfiles
+
+
+## Version: 8.1.0
+* Fix GTK3 deprecated-API warnings across panel/ and plugins/:
+  - GdkPixmap / gdk_pixmap_* → cairo_surface_t (bg.c)
+  - gdk_screen_* monitor API → GdkMonitor API (misc.c, panel.c)
+  - gtk_statusbar_* → removed dead statusbar code
+  - gdk_pixbuf_xlib_* → gdk-pixbuf-xlib still used in plugin.c, icons.c, pager.c
+  - gtk_style_* → GtkStyleContext API
+  - gtk_calendar_display_options → gtk_calendar_set_display_options
+  - fb_create_calendar dedup: moved to misc.c, removed per-plugin copies in dclock/tclock
+  - taskbar icon loading: GdkPixmap → cairo-xlib surface → GdkPixbuf
+
+
 ## Version: 8.0
 
 * Port from GTK2 to GTK3 (3.0+, tested up to 3.24.49)

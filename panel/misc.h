@@ -12,8 +12,6 @@
 
 #include "panel.h"
 
-GtkWidget *fb_create_calendar(void);
-
 int str2num(xconf_enum *p, gchar *str, int defval);
 gchar *num2str(xconf_enum *p, int num, gchar *defval);
 
@@ -41,11 +39,7 @@ void get_button_spacing(GtkRequisition *req, GtkContainer *parent, gchar *name);
 guint32 gcolor2rgb24(GdkRGBA *color);
 gchar *gdk_color_to_RRGGBB(GdkRGBA *color);
 
-GdkPixbuf *fb_pixbuf_new(gchar *iname, gchar *fname, int width, int height,
-        gboolean use_fallback);
-GtkWidget *fb_image_new(gchar *iname, gchar *fname, int width, int height);
-GtkWidget *fb_button_new(gchar *iname, gchar *fname, int width, int height,
-        gulong hicolor, gchar *name);
+#include "widgets.h"
 
 
 void configure();

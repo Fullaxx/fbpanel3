@@ -390,6 +390,14 @@ tb_make_menu(GtkWidget *widget, taskbar_priv *tb)
     tb->menu = menu;
 }
 
+static gboolean
+taskbar_apply_dim(taskbar_priv *tb)
+{
+    tb->pending_dim_id = 0;
+    gtk_bar_set_dimension(GTK_BAR(tb->bar), tb->pending_dim);
+    return G_SOURCE_REMOVE;
+}
+
 static void
 taskbar_size_alloc(GtkWidget *widget, GtkAllocation *a,
     taskbar_priv *tb)
@@ -402,7 +410,14 @@ taskbar_size_alloc(GtkWidget *widget, GtkAllocation *a,
         dim = a->width / tb->task_width_max;
     DBG("width=%d height=%d task_height_max=%d -> dim=%d\n",
         a->width, a->height, tb->task_height_max, dim);
-    gtk_bar_set_dimension(GTK_BAR(tb->bar), dim);
+
+    /* Defer gtk_bar_set_dimension (which calls gtk_widget_queue_resize) to an
+     * idle callback.  Calling queue_resize from within a size-allocate signal
+     * handler asks GTK to redo layout while layout is already running, which
+     * can produce stale allocations in GTK3. */
+    tb->pending_dim = dim;
+    if (!tb->pending_dim_id)
+        tb->pending_dim_id = g_idle_add((GSourceFunc)taskbar_apply_dim, tb);
     return;
 }
 

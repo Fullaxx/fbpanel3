@@ -1,3 +1,11 @@
+## Version: 8.3.10
+* Fix taskbar_size_alloc calling gtk_widget_queue_resize from within a
+  size-allocate signal handler.  gtk_bar_set_dimension (called from the
+  handler) internally calls gtk_widget_queue_resize, asking GTK to redo
+  layout while layout is already in progress.  Fix: store the desired
+  dimension and apply it via g_idle_add so it runs after the current
+  layout pass completes.  Cancel the idle in the destructor.
+
 ## Version: 8.3.9
 * Replace deprecated global gdk_window_add_filter(NULL,...) in taskbar with
   per-window filters on each tracked client window.  tb_event_filter only

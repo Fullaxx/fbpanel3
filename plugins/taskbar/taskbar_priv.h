@@ -97,6 +97,8 @@ struct _taskbar {
     int use_mouse_wheel;
     int use_urgency_hint;
     int discard_release_event;
+    int     pending_dim;     /* dim value waiting to be applied via idle */
+    guint   pending_dim_id;  /* g_idle_add source id, 0 if none pending */
 };
 
 /* Constants */

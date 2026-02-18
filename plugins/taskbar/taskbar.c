@@ -78,6 +78,10 @@ taskbar_destructor(plugin_instance *p)
 {
     taskbar_priv *tb = (taskbar_priv *) p;
 
+    if (tb->pending_dim_id) {
+        g_source_remove(tb->pending_dim_id);
+        tb->pending_dim_id = 0;
+    }
     /* Per-window filters are removed in del_task via task_remove_every below. */
     g_signal_handlers_disconnect_by_func(G_OBJECT (fbev),
             tb_net_current_desktop, tb);

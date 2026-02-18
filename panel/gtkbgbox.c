@@ -285,6 +285,15 @@ gtk_bgbox_draw(GtkWidget *widget, cairo_t *cr)
         cairo_set_source_surface(cr, priv->pixmap, 0, 0);
         cairo_paint(cr);
     }
+    if (priv->alpha) {
+        GdkRGBA rgba;
+        rgba.red   = ((priv->tintcolor >> 16) & 0xff) / 255.0;
+        rgba.green = ((priv->tintcolor >>  8) & 0xff) / 255.0;
+        rgba.blue  = ((priv->tintcolor      ) & 0xff) / 255.0;
+        rgba.alpha = 1.0;
+        gdk_cairo_set_source_rgba(cr, &rgba);
+        cairo_paint_with_alpha(cr, (double)priv->alpha / 255.0);
+    }
     GTK_WIDGET_CLASS(parent_class)->draw(widget, cr);
     return FALSE;
 }
@@ -349,21 +358,10 @@ gtk_bgbox_set_background(GtkWidget *widget, int bg_type, guint32 tintcolor, gint
 static void
 gtk_bgbox_set_bg_root(GtkWidget *widget, GtkBgboxPrivate *priv)
 {
-    GdkWindow *window;
-    GtkAllocation alloc;
-
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
-
     priv->pixmap = fb_bg_get_xroot_pix_for_win(priv->bg, widget);
-    window = gtk_widget_get_window(widget);
-    if (!priv->pixmap) {
-        gtk_widget_get_allocation(widget, &alloc);
-        gtk_widget_queue_draw_area(widget, 0, 0, alloc.width, alloc.height);
+    if (!priv->pixmap)
         DBG("no root pixmap was found\n");
-        return;
-    }
-    if (priv->alpha)
-        fb_bg_composite(window, priv->tintcolor, priv->alpha);
     return;
 }
 

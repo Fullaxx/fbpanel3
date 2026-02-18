@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(fbpanel VERSION 8.3.5 LANGUAGES C)
+project(fbpanel VERSION 8.3.6 LANGUAGES C)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 set(CMAKE_COLOR_MAKEFILE OFF)
 
@@ -20,9 +20,9 @@ file(GLOB FBPANEL_HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} panel/*.h)
 add_executable            (fbpanel        ${FBPANEL_SOURCES} ${FBPANEL_HEADERS})
 target_compile_options    (fbpanel        PRIVATE -MMD)
 target_include_directories(fbpanel        PUBLIC  panel . )
-target_include_directories(fbpanel SYSTEM PRIVATE ${X11_INCLUDE_DIRS} ${MODULES_INCLUDE_DIRS})
+target_include_directories(fbpanel SYSTEM PRIVATE ${X11_INCLUDE_DIRS} ${MODULES_INCLUDE_DIRS} ${CAIRO_XLIB_INCLUDE_DIRS})
 # export symbols during link process of fbpanel because plugins use fbpanel binary as library.
-target_link_libraries     (fbpanel        PRIVATE -lm ${X11_LIBRARIES} ${MODULES_LIBRARIES} -Wl,--export-dynamic)
+target_link_libraries     (fbpanel        PRIVATE -lm ${X11_LIBRARIES} ${MODULES_LIBRARIES} ${CAIRO_XLIB_LIBRARIES} -Wl,--export-dynamic)
 
 # make a list of fbpanel plugins
 set(PLUGINS battery batterytext cpu deskno genmon image mem2 meter pager space tclock volume chart dclock deskno2 icons launchbar mem menu net separator taskbar tray user wincmd)

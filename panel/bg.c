@@ -30,6 +30,7 @@
 #include <gdk/gdkx.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
+#include <cairo/cairo-xlib.h>
 
 #include "bg.h"
 #include "panel.h"
@@ -199,20 +200,43 @@ cairo_surface_t *
 fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y, gint width, gint height)
 {
     cairo_surface_t *gbgpix;
-    Pixmap bgpix;
-    GtkWidget *widget;
+    cairo_surface_t *xlib_surf;
+    guint  rpw, rph, rpborder, rpdepth;
+    Window dummy;
+    int rpx, rpy;
+    cairo_t *cr;
 
     if (bg->pixmap == None)
         return NULL;
-    gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
-    if (!gbgpix) {
-        ERR("cairo_image_surface_create failed\n");
+
+    if (!XGetGeometry(bg->dpy, bg->pixmap, &dummy, &rpx, &rpy,
+                      &rpw, &rph, &rpborder, &rpdepth)) {
+        ERR("XGetGeometry on root pixmap failed\n");
         return NULL;
     }
-    widget = gtk_offscreen_window_new();
-    bgpix = gdk_x11_window_get_xid(gtk_widget_get_window(widget));
-    XSetTSOrigin(bg->dpy, bg->gc, -x, -y);
-    XFillRectangle(bg->dpy, bgpix, bg->gc, 0, 0, width, height);
+
+    xlib_surf = cairo_xlib_surface_create(
+        bg->dpy, bg->pixmap,
+        DefaultVisual(bg->dpy, DefaultScreen(bg->dpy)),
+        (int)rpw, (int)rph);
+    if (cairo_surface_status(xlib_surf) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(xlib_surf);
+        return NULL;
+    }
+
+    gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
+    if (cairo_surface_status(gbgpix) != CAIRO_STATUS_SUCCESS) {
+        ERR("cairo_image_surface_create failed\n");
+        cairo_surface_destroy(xlib_surf);
+        cairo_surface_destroy(gbgpix);
+        return NULL;
+    }
+
+    cr = cairo_create(gbgpix);
+    cairo_set_source_surface(cr, xlib_surf, -x, -y);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    cairo_surface_destroy(xlib_surf);
     return gbgpix;
 }
 
@@ -221,10 +245,12 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
 {
     Window win;
     Window dummy;
-    Pixmap bgpix;
     cairo_surface_t *gbgpix;
+    cairo_surface_t *xlib_surf;
     guint  width, height, border, depth;
-    int  x, y;
+    guint  rpw, rph, rpborder, rpdepth;
+    int  x, y, rpx, rpy;
+    cairo_t *cr;
 
     if (bg->pixmap == None)
         return NULL;
@@ -240,50 +266,36 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
 
     XTranslateCoordinates(bg->dpy, win, bg->xroot, 0, 0, &x, &y, &dummy);
     DBG("win=%lx %dx%d%+d%+d\n", win, width, height, x, y);
-    gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
-    if (!gbgpix) {
-        ERR("cairo_image_surface_create failed\n");
+
+    if (!XGetGeometry(bg->dpy, bg->pixmap, &dummy, &rpx, &rpy,
+                      &rpw, &rph, &rpborder, &rpdepth)) {
+        ERR("XGetGeometry on root pixmap failed\n");
         return NULL;
     }
-    widget = gtk_offscreen_window_new();
-    bgpix = gdk_x11_window_get_xid(gtk_widget_get_window(widget));
-    XSetTSOrigin(bg->dpy, bg->gc, -x, -y);
-    XFillRectangle(bg->dpy, bgpix, bg->gc, 0, 0, width, height);
-    return gbgpix;
-}
 
-void
-fb_bg_composite(GdkWindow *base, guint32 tintcolor, gint alpha)
-{
-    cairo_t *cr;
-    GdkDrawingContext *content;
-    GdkRGBA rgba;
-    cairo_region_t *region;
-
-    region = cairo_region_create();
-    content = gdk_window_begin_draw_frame(base, region);
-    cairo_region_destroy(region);
-    if (!content)
-        return;
-
-    cr = gdk_drawing_context_get_cairo_context(content);
-    if (!cr) {
-        gdk_window_end_draw_frame(base, content);
-        return;
+    xlib_surf = cairo_xlib_surface_create(
+        bg->dpy, bg->pixmap,
+        DefaultVisual(bg->dpy, DefaultScreen(bg->dpy)),
+        (int)rpw, (int)rph);
+    if (cairo_surface_status(xlib_surf) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(xlib_surf);
+        return NULL;
     }
 
-    /* Unpack tintcolor (0xRRGGBB) into a GdkRGBA and paint the tint overlay */
-    rgba.red   = ((tintcolor >> 16) & 0xff) / 255.0;
-    rgba.green = ((tintcolor >>  8) & 0xff) / 255.0;
-    rgba.blue  = ((tintcolor      ) & 0xff) / 255.0;
-    rgba.alpha = 1.0;
-    gdk_cairo_set_source_rgba(cr, &rgba);
-    cairo_paint_with_alpha(cr, (double) alpha / 255);
+    gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
+    if (cairo_surface_status(gbgpix) != CAIRO_STATUS_SUCCESS) {
+        ERR("cairo_image_surface_create failed\n");
+        cairo_surface_destroy(xlib_surf);
+        cairo_surface_destroy(gbgpix);
+        return NULL;
+    }
 
-    /* cr is owned by the drawing context — do NOT cairo_destroy() it */
-    gdk_window_end_draw_frame(base, content);
-    fb_bg_changed(fb_bg_get_for_display());
-    return;
+    cr = cairo_create(gbgpix);
+    cairo_set_source_surface(cr, xlib_surf, -x, -y);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    cairo_surface_destroy(xlib_surf);
+    return gbgpix;
 }
 
 

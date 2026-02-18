@@ -1,3 +1,16 @@
+## Version: 8.3.6
+* Fix double free / crash on VNC resize: fb_bg_composite() called
+  gdk_window_begin_draw_frame() from within the size_allocate chain, corrupting
+  GDK's internal paint_stack.  Fix: remove fb_bg_composite() entirely; move
+  tint overlay painting into gtk_bgbox_draw() using the cairo_t provided by
+  GTK3's draw vfunc.
+* Fix "gdk_x11_window_get_xid: assertion 'GDK_IS_X11_WINDOW' failed" (3x at
+  startup): fb_bg_get_xroot_pix_for_win() and fb_bg_get_xroot_pix_for_area()
+  used gtk_offscreen_window_new() to obtain an X11 drawable — offscreen windows
+  have no X11 backing in GTK3.  Rewritten to use cairo_xlib_surface_create()
+  to wrap the X11 root pixmap and blit the relevant slice into a new image
+  surface.  Add cairo-xlib to fbpanel binary link targets.
+
 ## Version: 8.3.5
 * Fix segfault in fb_bg_composite() (triggered by transparent=true in default
   config): missing gdk_window_end_draw_frame() left the window locked; second

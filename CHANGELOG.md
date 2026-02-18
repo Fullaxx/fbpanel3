@@ -1,3 +1,11 @@
+## Version: 8.3.3
+* Fix crash on startup: gtk_bgbox_realize() called parent class realize() which
+  chains to gtk_widget_real_realize() — that function asserts the widget does
+  NOT have its own GDK window, but GtkBgbox sets has_window=TRUE.
+  Fix: create the GDK child window explicitly in gtk_bgbox_realize(), following
+  the GTK3 GtkLayout/GtkDrawingArea pattern, without calling parent realize().
+
+
 ## Version: 8.3.2
 * Fix crash on startup: remove GTK2 'size-request' signal connection (signal
   does not exist in GTK3 for GtkWindow, causing a fatal assertion in realize)

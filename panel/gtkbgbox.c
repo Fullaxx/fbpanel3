@@ -145,6 +145,10 @@ static void
 gtk_bgbox_realize (GtkWidget *widget)
 {
     GtkBgboxPrivate *priv;
+    GdkWindowAttr attributes;
+    GtkAllocation allocation;
+    GdkWindow *window;
+    gint attributes_mask;
 
     gtk_widget_add_events(widget,
         GDK_BUTTON_MOTION_MASK |
@@ -154,13 +158,31 @@ gtk_bgbox_realize (GtkWidget *widget)
         GDK_LEAVE_NOTIFY_MASK  |
         GDK_STRUCTURE_MASK);
 
-    GTK_WIDGET_CLASS(parent_class)->realize(widget);
+    /* GTK3: gtk_widget_real_realize() asserts !has_window, so we cannot call
+     * the parent class realize when has_window==TRUE.  Create the GDK child
+     * window ourselves, following the GtkLayout / GtkDrawingArea pattern. */
+    gtk_widget_set_realized(widget, TRUE);
+
+    gtk_widget_get_allocation(widget, &allocation);
+    attributes.window_type  = GDK_WINDOW_CHILD;
+    attributes.x            = allocation.x;
+    attributes.y            = allocation.y;
+    attributes.width        = allocation.width;
+    attributes.height       = allocation.height;
+    attributes.wclass       = GDK_INPUT_OUTPUT;
+    attributes.visual       = gtk_widget_get_visual(widget);
+    attributes.event_mask   = gtk_widget_get_events(widget);
+    attributes_mask         = GDK_WA_X | GDK_WA_Y | GDK_WA_VISUAL;
+
+    window = gdk_window_new(gtk_widget_get_parent_window(widget),
+                            &attributes, attributes_mask);
+    gtk_widget_register_window(widget, window);
+    gtk_widget_set_window(widget, window);
 
     priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
     if (priv->bg_type == BG_NONE)
         gtk_bgbox_set_background(widget, BG_STYLE, 0, 0);
-    gdk_window_add_filter(gtk_widget_get_window(widget),
-                          (GdkFilterFunc) gtk_bgbox_event_filter, widget);
+    gdk_window_add_filter(window, (GdkFilterFunc) gtk_bgbox_event_filter, widget);
     return;
 }
 

@@ -53,7 +53,7 @@ tclock_create_calendar(void)
     gtk_window_stick(GTK_WINDOW(win));
 
     calendar = gtk_calendar_new();
-    gtk_calendar_display_options(
+    gtk_calendar_set_display_options(
         GTK_CALENDAR(calendar),
         GTK_CALENDAR_SHOW_WEEK_NUMBERS | GTK_CALENDAR_SHOW_DAY_NAMES
         | GTK_CALENDAR_SHOW_HEADING);

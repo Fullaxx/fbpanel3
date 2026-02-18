@@ -302,7 +302,7 @@ rebuild_menu(plugin_instance *p)
     menu_priv *m = (menu_priv *) p;
     
     ENTER;
-    if (m->menu && GTK_WIDGET_MAPPED(m->menu))
+    if (m->menu && gtk_widget_get_mapped(m->menu))
         RET(TRUE);
     menu_create(p);
     m->rtout = 0;

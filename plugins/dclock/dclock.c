@@ -80,7 +80,7 @@ dclock_create_calendar()
     gtk_window_stick(GTK_WINDOW(win));
           
     calendar = gtk_calendar_new();
-    gtk_calendar_display_options(
+    gtk_calendar_set_display_options(
         GTK_CALENDAR(calendar),
         GTK_CALENDAR_SHOW_WEEK_NUMBERS | GTK_CALENDAR_SHOW_DAY_NAMES
         | GTK_CALENDAR_SHOW_HEADING);
@@ -308,8 +308,8 @@ dclock_constructor(plugin_instance *p)
     }
     if (color_str)
     {
-        GdkColor color;
-        if (gdk_color_parse (color_str, &color)) 
+        GdkRGBA color;
+        if (gdk_rgba_parse (&color, color_str))
             dc->color = gcolor2rgb24(&color);
     }
     if (dc->hours_view == DC_24H)

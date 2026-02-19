@@ -1,3 +1,11 @@
+## Version: 8.3.12
+* taskbar: expand GtkCssProvider CSS to give task buttons a theme-independent
+  appearance.  In GTK3, GtkButton renders entirely via CSS; without a desktop
+  theme installed (e.g. in a bare Xvfb session) buttons appear as solid black
+  transparent rectangles.  Apply explicit background gradient, border, and
+  border-radius for normal, hover (:hover), and focused-window (:active) states,
+  plus a near-white label colour, so the taskbar is legible in any environment.
+
 ## Version: 8.3.11
 * panel.c: fix panel_size_alloc signal handler to use GtkAllocation *
   instead of GdkRectangle * (identical layout but wrong type for the

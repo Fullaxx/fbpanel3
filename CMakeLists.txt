@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(fbpanel VERSION 8.3.14 LANGUAGES C)
+project(fbpanel VERSION 8.3.15 LANGUAGES C)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 set(CMAKE_COLOR_MAKEFILE OFF)
 
@@ -40,9 +40,11 @@ foreach(PLUGIN ${PLUGINS})
     target_compile_options    (${PLUGIN}        PUBLIC -pthread -MMD)
 endforeach()
 
-# taskbar needs cairo-xlib for Pixmap → GdkPixbuf conversion (WM_HINTS icons)
+# taskbar and pager need cairo-xlib for X Pixmap → GdkPixbuf conversion (WM_HINTS icons)
 target_include_directories(taskbar SYSTEM PRIVATE ${CAIRO_XLIB_INCLUDE_DIRS})
 target_link_libraries(taskbar PRIVATE ${CAIRO_XLIB_LIBRARIES})
+target_include_directories(pager SYSTEM PRIVATE ${CAIRO_XLIB_INCLUDE_DIRS})
+target_link_libraries(pager PRIVATE ${CAIRO_XLIB_LIBRARIES})
 
 # workout manpage
 set(DATADIR "${CMAKE_INSTALL_FULL_DATADIR}/${PROJECT_NAME}/config")

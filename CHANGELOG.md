@@ -1,3 +1,18 @@
+## Version: 8.3.15
+* pager: implement WM_HINTS icon loading from X Pixmaps (M-5).
+  _wnck_gdk_pixbuf_get_from_pixmap was a GTK3-port stub that always
+  returned NULL because gdk_pixbuf_get_from_drawable() was removed in GTK3.
+  Windows with only WM_HINTS icons (no _NET_WM_ICON) showed the generic
+  fallback icon in the pager thumbnail instead of their actual icon.
+  Replace the stub with a cairo-xlib implementation:
+  - Full-depth icon pixmap: cairo_xlib_surface_create() → copy to image
+    surface → gdk_pixbuf_get_from_surface().
+  - 1-bit mask bitmap: cairo_xlib_surface_create_for_bitmap() → render
+    white-on-black onto an RGB image surface (black=transparent,
+    white=opaque, as expected by the existing apply_mask() function).
+  Add cairo-xlib include and link targets for the pager plugin in
+  CMakeLists.txt (previously only taskbar had them).
+
 ## Version: 8.3.14
 * Fix transparent panel appearing black when no wallpaper pixmap is set
   (_XROOTPMAP_ID atom absent, e.g. in a bare Xvfb session):

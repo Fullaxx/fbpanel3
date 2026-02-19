@@ -30,6 +30,7 @@
 #include <gdk-pixbuf-xlib/gdk-pixbuf-xlib.h>
 #include <gdk/gdk.h>
 #include <cairo/cairo.h>
+#include <cairo/cairo-xlib.h>
 
 #include "panel.h"
 #include "misc.h"
@@ -517,11 +518,62 @@ _wnck_gdk_pixbuf_get_from_pixmap (GdkPixbuf   *dest,
                                   int          width,
                                   int          height)
 {
-    /* GTK3: gdk_pixbuf_get_from_drawable is removed.
-     * Return NULL - icon loading from X pixmaps not supported. */
-    (void)dest; (void)xpixmap; (void)src_x; (void)src_y;
-    (void)dest_x; (void)dest_y; (void)width; (void)height;
-    return NULL;
+    Display *dpy = GDK_DPY;
+    cairo_surface_t *xlib_surf, *image;
+    GdkPixbuf *ret;
+    cairo_t *cr;
+    Window root_ret;
+    int rx, ry;
+    unsigned int rw, rh, rborder, depth;
+
+    (void)dest; (void)dest_x; (void)dest_y;
+
+    if (!XGetGeometry(dpy, xpixmap, &root_ret, &rx, &ry, &rw, &rh, &rborder, &depth))
+        return NULL;
+
+    image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
+    if (cairo_surface_status(image) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(image);
+        return NULL;
+    }
+
+    if (depth == 1) {
+        /* 1-bit X bitmap (icon mask).  Render white-on-black so that
+         * apply_mask() can read black=transparent, white=opaque. */
+        xlib_surf = cairo_xlib_surface_create_for_bitmap(
+            dpy, xpixmap, DefaultScreenOfDisplay(dpy), (int)rw, (int)rh);
+        if (cairo_surface_status(xlib_surf) != CAIRO_STATUS_SUCCESS) {
+            cairo_surface_destroy(xlib_surf);
+            cairo_surface_destroy(image);
+            return NULL;
+        }
+        cr = cairo_create(image);
+        cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+        cairo_paint(cr);
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        cairo_mask_surface(cr, xlib_surf, -src_x, -src_y);
+        cairo_destroy(cr);
+    } else {
+        /* Full-depth colour pixmap (icon image). */
+        xlib_surf = cairo_xlib_surface_create(
+            dpy, xpixmap,
+            DefaultVisual(dpy, DefaultScreen(dpy)),
+            (int)rw, (int)rh);
+        if (cairo_surface_status(xlib_surf) != CAIRO_STATUS_SUCCESS) {
+            cairo_surface_destroy(xlib_surf);
+            cairo_surface_destroy(image);
+            return NULL;
+        }
+        cr = cairo_create(image);
+        cairo_set_source_surface(cr, xlib_surf, -src_x, -src_y);
+        cairo_paint(cr);
+        cairo_destroy(cr);
+    }
+
+    cairo_surface_destroy(xlib_surf);
+    ret = gdk_pixbuf_get_from_surface(image, 0, 0, width, height);
+    cairo_surface_destroy(image);
+    return ret;
 }
 
 static GdkPixbuf*

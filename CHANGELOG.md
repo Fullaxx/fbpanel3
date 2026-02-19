@@ -1,3 +1,14 @@
+## Version: 8.3.21
+* docs: add PLUGIN_ARCHITECTURE.md — authoritative reference for the
+  plugin system covering: lifecycle (load/start/stop/unload), the
+  plugin_class and plugin_instance contracts, constructor return value
+  semantics, the XCG() config macro, the FbEv event bus, pseudo-
+  transparent backgrounds, the PLUGIN macro, helper sub-plugins (meter,
+  chart), a minimal working example, and a checklist for adding a new
+  plugin.  Includes a formal requirements table (R1–R8) codifying that
+  plugins must never call exit() and must gracefully self-disable with
+  a g_message() when hardware or resources are unavailable.
+
 ## Version: 8.3.20
 * panel: make plugin start failures non-fatal (skip plugin, continue).
   Previously panel_parse_plugin() called exit(1) when any plugin's

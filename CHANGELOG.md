@@ -1,3 +1,11 @@
+## Version: 8.3.13
+* dclock: add source-tree fallback path for dclock_glyphs.png so the plugin
+  works when fbpanel is run directly from the build directory without installing.
+  Try IMGPREFIX (installed path) first; if the file is not found there, try
+  SRCIMGPREFIX (CMAKE_SOURCE_DIR/data/images, baked in at compile time).
+  Also emit a clear ERR() message when both paths fail instead of returning 0
+  silently.  Added SRCIMGPREFIX define to config.h.in.
+
 ## Version: 8.3.12
 * taskbar: expand GtkCssProvider CSS to give task buttons a theme-independent
   appearance.  In GTK3, GtkButton renders entirely via CSS; without a desktop

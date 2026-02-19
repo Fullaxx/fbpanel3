@@ -250,7 +250,12 @@ dclock_constructor(plugin_instance *p)
     dc = (dclock_priv *) p;
     dc->glyphs = gdk_pixbuf_new_from_file(IMGPREFIX "/dclock_glyphs.png", NULL);
     if (!dc->glyphs)
+        dc->glyphs = gdk_pixbuf_new_from_file(SRCIMGPREFIX "/dclock_glyphs.png", NULL);
+    if (!dc->glyphs) {
+        ERR("dclock: can't load " IMGPREFIX "/dclock_glyphs.png"
+            " (use 'tclock' plugin for a text clock)\n");
         return 0;
+    }
 
     dc->cfmt = NULL;
     dc->tfmt = TOOLTIP_FMT;

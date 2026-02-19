@@ -5,3 +5,5 @@
 #define LOCALEDIR  "@CMAKE_INSTALL_FULL_LOCALEDIR@"
 #define PROJECT_NAME  "@CMAKE_PROJECT_NAME@"
 #define PROJECT_VERSION  "@CMAKE_PROJECT_VERSION@"
+/* Source-tree image directory — used as a fallback when running uninstalled */
+#define SRCIMGPREFIX  "@CMAKE_SOURCE_DIR@/data/images"

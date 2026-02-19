@@ -29,6 +29,7 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gdk-pixbuf-xlib/gdk-pixbuf-xlib.h>
 #include <gdk/gdk.h>
+#include <gdk/gdkx.h>
 #include <cairo/cairo.h>
 #include <cairo/cairo-xlib.h>
 
@@ -46,6 +47,7 @@
 /* managed window: all related info that wm holds about its managed windows */
 typedef struct _task {
     Window win;
+    GdkWindow *gdkwin;          /* GDK wrapper for win; used for per-window event filter */
     int x, y;
     guint w, h;
     gint refcount;
@@ -99,6 +101,7 @@ struct _pager_priv {
 
 static void pager_rebuild_all(FbEv *ev, pager_priv *pg);
 static void desk_draw_bg(pager_priv *pg, desk *d1);
+static GdkFilterReturn pager_event_filter(XEvent *, GdkEvent *, pager_priv *);
 //static void pager_paint_frame(pager_priv *pg, gint no, GtkStateType state);
 
 static void pager_destructor(plugin_instance *p);
@@ -150,6 +153,11 @@ task_remove_stale(Window *win, task *t, pager_priv *p)
         if (p->focusedtask == t)
             p->focusedtask = NULL;
         DBG("del %lx\n", t->win);
+        if (t->gdkwin) {
+            gdk_window_remove_filter(t->gdkwin,
+                    (GdkFilterFunc)pager_event_filter, p);
+            g_object_unref(t->gdkwin);
+        }
         g_free(t);
         return TRUE;
     }
@@ -162,7 +170,11 @@ task_remove_all(Window *win, task *t, pager_priv *p)
 {
     if (t->pixbuf != NULL)
         g_object_unref(t->pixbuf);
-
+    if (t->gdkwin) {
+        gdk_window_remove_filter(t->gdkwin,
+                (GdkFilterFunc)pager_event_filter, p);
+        g_object_unref(t->gdkwin);
+    }
     g_free(t);
     return TRUE;
 }
@@ -863,8 +875,14 @@ do_net_client_list_stacking(FbEv *ev, pager_priv *p)
             t = g_new0(task, 1);
             t->refcount++;
             t->win = p->wins[i];
-            if (!FBPANEL_WIN(t->win))
+            if (!FBPANEL_WIN(t->win)) {
                 XSelectInput (GDK_DPY, t->win, PropertyChangeMask | StructureNotifyMask);
+                t->gdkwin = gdk_x11_window_foreign_new_for_display(
+                        gdk_display_get_default(), t->win);
+                if (t->gdkwin)
+                    gdk_window_add_filter(t->gdkwin,
+                            (GdkFilterFunc)pager_event_filter, p);
+            }
             t->desktop = get_net_wm_desktop(t->win);
             get_net_wm_state(t->win, &t->nws);
             get_net_wm_window_type(t->win, &t->nwwt);
@@ -1059,8 +1077,6 @@ pager_constructor(plugin_instance *plug)
 
     pager_rebuild_all(fbev, pg);
 
-    gdk_window_add_filter(NULL, (GdkFilterFunc)pager_event_filter, pg );
-
     g_signal_connect (G_OBJECT (fbev), "current_desktop",
           G_CALLBACK (do_net_current_desktop), (gpointer) pg);
     g_signal_connect (G_OBJECT (fbev), "active_window",
@@ -1085,7 +1101,6 @@ pager_destructor(plugin_instance *p)
             pager_rebuild_all, pg);
     g_signal_handlers_disconnect_by_func(G_OBJECT (fbev),
             do_net_client_list_stacking, pg);
-    gdk_window_remove_filter(NULL, (GdkFilterFunc)pager_event_filter, pg);
     while (pg->desknum--) {
         desk_free(pg, pg->desknum);
     }

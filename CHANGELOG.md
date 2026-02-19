@@ -1,3 +1,11 @@
+## Version: 8.3.22
+* pager, icons: replace deprecated global gdk_window_add_filter(NULL, ...)
+  with per-window GDK filters, matching the pattern already used by the
+  taskbar plugin since v8.3.x.  Each tracked window gets a GdkWindow
+  wrapper (gdk_x11_window_foreign_new_for_display) and a per-window filter
+  at task creation; the filter is removed and the GdkWindow unreffed when
+  the task is freed.  No more global event interception; fully GTK3-correct.
+
 ## Version: 8.3.21
 * docs: add PLUGIN_ARCHITECTURE.md — authoritative reference for the
   plugin system covering: lifecycle (load/start/stop/unload), the

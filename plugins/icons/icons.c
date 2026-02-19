@@ -10,6 +10,7 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gdk-pixbuf-xlib/gdk-pixbuf-xlib.h>
 #include <gdk/gdk.h>
+#include <gdk/gdkx.h>
 
 
 
@@ -32,8 +33,9 @@ struct _icons;
 typedef struct _task{
     struct _icons *ics;
     Window win;
+    GdkWindow *gdkwin;          /* GDK wrapper for win; used for per-window event filter */
     int refcount;
-    XClassHint ch;    
+    XClassHint ch;
 } task;
 
 typedef struct _icons{
@@ -56,9 +58,14 @@ static void icons_destructor(plugin_instance *p);
 static void
 free_task(icons_priv *ics, task *tk, int hdel)
 {
-    ics->num_tasks--; 
+    ics->num_tasks--;
     if (hdel)
         g_hash_table_remove(ics->task_list, &tk->win);
+    if (tk->gdkwin) {
+        gdk_window_remove_filter(tk->gdkwin,
+                (GdkFilterFunc)ics_event_filter, ics);
+        g_object_unref(tk->gdkwin);
+    }
     if (tk->ch.res_class)
         XFree(tk->ch.res_class);
     if (tk->ch.res_name)
@@ -325,6 +332,11 @@ do_net_client_list(icons_priv *ics)
             {
                 XSelectInput(GDK_DPY, tk->win,
                     PropertyChangeMask | StructureNotifyMask);
+                tk->gdkwin = gdk_x11_window_foreign_new_for_display(
+                        gdk_display_get_default(), tk->win);
+                if (tk->gdkwin)
+                    gdk_window_add_filter(tk->gdkwin,
+                            (GdkFilterFunc)ics_event_filter, ics);
             }
             get_wmclass(tk);
             set_icon_maybe(ics, tk);
@@ -483,7 +495,6 @@ icons_constructor(plugin_instance *p)
         "changed", (GCallback) theme_changed, ics);
     g_signal_connect_swapped(G_OBJECT (fbev), "client_list",
         G_CALLBACK (do_net_client_list), (gpointer) ics);
-    gdk_window_add_filter(NULL, (GdkFilterFunc)ics_event_filter, ics );
 
     return 1;
 }
@@ -498,7 +509,6 @@ icons_destructor(plugin_instance *p)
         ics);
     g_signal_handlers_disconnect_by_func(G_OBJECT(gtk_icon_theme_get_default()),
         theme_changed, ics);
-    gdk_window_remove_filter(NULL, (GdkFilterFunc)ics_event_filter, ics );
     drop_config(ics);
     g_hash_table_destroy(ics->task_list);
     return;

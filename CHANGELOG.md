@@ -1,3 +1,17 @@
+## Version: 8.3.14
+* Fix transparent panel appearing black when no wallpaper pixmap is set
+  (_XROOTPMAP_ID atom absent, e.g. in a bare Xvfb session):
+  - bg.c: emit a one-time g_message() when _XROOTPMAP_ID is not found at
+    startup, telling the user to run 'xsetroot' or a wallpaper setter.
+  - gtkbgbox.c (gtk_bgbox_draw): when BG_ROOT mode is active but the root
+    pixmap is NULL, call gtk_render_background() as a CSS fallback instead
+    of painting nothing (which left the widget transparent/black).
+  - panel.c: name the panel bbox widget "panel-bg" and apply a
+    #333333 dark-gray background rule at GTK_STYLE_PROVIDER_PRIORITY_FALLBACK.
+    When a wallpaper IS present the BG_ROOT path paints the root pixmap
+    directly (CSS is bypassed); when no pixmap is available the fallback
+    CSS makes the panel visibly dark rather than invisible.
+
 ## Version: 8.3.13
 * dclock: add source-tree fallback path for dclock_glyphs.png so the plugin
   works when fbpanel is run directly from the build directory without installing.

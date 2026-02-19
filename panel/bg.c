@@ -125,6 +125,10 @@ fb_bg_init (FbBg *bg)
     bg->xroot = DefaultRootWindow(bg->dpy);
     bg->id = XInternAtom(bg->dpy, "_XROOTPMAP_ID", False);
     bg->pixmap = fb_bg_get_xrootpmap_real(bg);
+    if (bg->pixmap == None)
+        g_message("fbpanel: _XROOTPMAP_ID not set — no wallpaper pixmap found.\n"
+                  "         Run 'xsetroot -solid <color>' or a wallpaper setter\n"
+                  "         for the transparent background effect to work.");
     gcv.ts_x_origin = 0;
     gcv.ts_y_origin = 0;
     gcv.fill_style = FillTiled;

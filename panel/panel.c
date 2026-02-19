@@ -586,9 +586,24 @@ panel_start_gui(panel *p)
 
     // background box all over toplevel
     p->bbox = gtk_bgbox_new();
+    gtk_widget_set_name(p->bbox, "panel-bg");
     gtk_container_add(GTK_CONTAINER(p->topgwin), p->bbox);
     gtk_container_set_border_width(GTK_CONTAINER(p->bbox), 0);
     if (p->transparent) {
+        /* Apply a dark fallback CSS rule at the lowest priority.  When the
+         * root pixmap is available (wallpaper set) the BG_ROOT path in
+         * gtk_bgbox_draw paints it directly and this CSS is never invoked.
+         * When no root pixmap exists, gtk_bgbox_draw falls back to
+         * gtk_render_background which picks up this rule, giving the panel a
+         * visible dark background rather than transparent/black. */
+        GtkCssProvider *css = gtk_css_provider_new();
+        gtk_css_provider_load_from_data(css,
+            "#panel-bg { background-color: #333333; }", -1, NULL);
+        gtk_style_context_add_provider(
+            gtk_widget_get_style_context(p->bbox),
+            GTK_STYLE_PROVIDER(css),
+            GTK_STYLE_PROVIDER_PRIORITY_FALLBACK);
+        g_object_unref(css);
         p->bg = fb_bg_get_for_display();
         gtk_bgbox_set_background(p->bbox, BG_ROOT, p->tintcolor, p->alpha);
     }

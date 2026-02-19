@@ -265,6 +265,15 @@ gtk_bgbox_draw(GtkWidget *widget, cairo_t *cr)
     if (priv->pixmap) {
         cairo_set_source_surface(cr, priv->pixmap, 0, 0);
         cairo_paint(cr);
+    } else if (priv->bg_type == BG_ROOT) {
+        /* No root pixmap (wallpaper not set).  Fall back to the CSS background
+         * so the panel is visible rather than transparent/black.  The caller
+         * (panel.c) applies a dark fallback rule at PRIORITY_FALLBACK so a
+         * desktop theme can still override it. */
+        GtkStyleContext *ctx = gtk_widget_get_style_context(widget);
+        gtk_render_background(ctx, cr, 0, 0,
+            gtk_widget_get_allocated_width(widget),
+            gtk_widget_get_allocated_height(widget));
     }
     if (priv->alpha) {
         GdkRGBA rgba;

@@ -1,7 +1,7 @@
 # GTK2 → GTK3 Transition Deep-Dive
 
 Living reference document for the fbpanel3 GTK3 port. Updated as fixes land.
-Last updated: v8.3.6 → v8.3.7 roadmap.
+Last updated: v8.3.22.
 
 ---
 
@@ -124,41 +124,41 @@ Specifically:
 
 ### HIGH Issues
 
-#### H-1: `gdk_window_add_filter` deprecated — taskbar and gtkbgbox
+#### H-1: `gdk_window_add_filter` deprecated — taskbar, gtkbgbox, pager, icons
 
-- **Files:**
-  - `plugins/taskbar/taskbar_ui.c` (line 422)
-  - `panel/gtkbgbox.c` (line 185)
 - **Deprecated:** GTK 3.12; **removed in GTK4**
 - **Impact on GTK 3.24.x:** Still works but produces deprecation warnings in strict
   builds; will break entirely on GTK4
+- **Status:** Fixed across all affected files
 
-**taskbar_ui.c usage:**
+**Fixed files:**
 
-`gdk_window_add_filter(NULL, (GdkFilterFunc)tb_event_filter, tb)` — the `NULL` window
-installs a **global** filter on all X events. This is the sole mechanism used to
-intercept `PropertyNotify` X11 events for the root window (`_NET_CLIENT_LIST`, etc.)
-and for tracked client windows (title, icon, state changes).
+| File | Fix | Version |
+|------|-----|---------|
+| `panel/gtkbgbox.c` | Removed `gdk_window_add_filter(window, ...)` + `gtk_bgbox_event_filter`; ConfigureNotify is handled by GTK3 automatically (see M-3) | v8.3.8 |
+| `plugins/taskbar/taskbar_ui.c` | Replaced `gdk_window_add_filter(NULL, ...)` with per-window `gdk_window_add_filter(tk->gdkwin, ...)` using `gdk_x11_window_foreign_new_for_display`; filter added in `tk_build_gui`, removed in `del_task` | v8.3.9 |
+| `plugins/pager/pager.c` | Same per-window pattern: `task.gdkwin` field, filter added in `do_net_client_list_stacking`, removed in `task_remove_stale`/`task_remove_all` | v8.3.22 |
+| `plugins/icons/icons.c` | Same per-window pattern: `task.gdkwin` field, filter added in `do_net_client_list`, removed in `free_task` | v8.3.22 |
 
-Fix option (GTK3):
-- For **root window** events: replace with
-  `gdk_window_add_filter(gdk_screen_get_root_window(...), ...)` — this still uses
-  `gdk_window_add_filter` but on a specific window rather than globally.
-- For **tracked client windows**: per-window `gdk_window_add_filter` calls (one per
-  tracked window) still work in GTK 3.24.x.
-- **Design note:** Replacing the global NULL filter requires careful redesign — document
-  as requiring investigation before landing the fix. See the implementation notes section.
+**Per-window filter pattern (from taskbar, replicated to pager/icons):**
+```c
+/* When adding a tracked window: */
+tk->gdkwin = gdk_x11_window_foreign_new_for_display(
+        gdk_display_get_default(), tk->win);
+if (tk->gdkwin)
+    gdk_window_add_filter(tk->gdkwin, (GdkFilterFunc)my_event_filter, priv);
 
-**gtkbgbox.c usage:**
-
-`gdk_window_add_filter(window, gtk_bgbox_event_filter, widget)` catches `ConfigureNotify`
-to call `gtk_widget_queue_draw`. This is now redundant: GTK3 already queues a draw on
-configure, and the `draw` vfunc handles all painting. See M-3.
+/* When removing a tracked window: */
+if (tk->gdkwin) {
+    gdk_window_remove_filter(tk->gdkwin, (GdkFilterFunc)my_event_filter, priv);
+    g_object_unref(tk->gdkwin);
+}
+```
 
 #### H-2: `taskbar_size_alloc` calls `gtk_widget_queue_resize` from `size-allocate` signal
 
 - **File:** `plugins/taskbar/taskbar_ui.c` (line 395)
-- **Status:** Fix scheduled for v8.3.10
+- **Status:** Fixed in v8.3.10
 
 `taskbar_size_alloc` is connected to the `size-allocate` signal of `p->pwid`. Inside
 it calls `gtk_bar_set_dimension` → `gtk_widget_queue_resize(GTK_WIDGET(tb->bar))`.
@@ -178,7 +178,7 @@ rather than from the `size-allocate` signal.
 #### M-1: `panel_size_alloc` signal handler signature mismatch
 
 - **File:** `panel/panel.c` (line ~184)
-- **Status:** Fix scheduled for v8.3.11
+- **Status:** Fixed in v8.3.11
 
 The `size-allocate` signal passes `GtkAllocation *` but the handler uses `GdkRectangle *`.
 Both have identical struct layout (4 `gint`s), so it works today. However, GObject signal
@@ -189,7 +189,7 @@ marshaling can be strict about type in debug builds or future GTK versions.
 #### M-2: Tray plugin force-reflow hack
 
 - **File:** `plugins/tray/main.c` (lines 39-40)
-- **Status:** Fix scheduled for v8.3.11
+- **Status:** Fixed in v8.3.11
 
 Uses `gtk_events_pending()` + `gtk_main_iteration()` inside a callback — a GTK2-era
 workaround to force a synchronous relayout. In GTK3, this can cause nested event
@@ -200,7 +200,7 @@ processing (reentrancy) during signal callbacks.
 #### M-3: `gtkbgbox.c` — ConfigureNotify filter now redundant
 
 - **File:** `panel/gtkbgbox.c` (line 185, `gtk_bgbox_realize`)
-- **Status:** Fix scheduled for v8.3.8
+- **Status:** Fixed in v8.3.8
 
 `gdk_window_add_filter(window, gtk_bgbox_event_filter, widget)` catches `ConfigureNotify`
 to call `gtk_widget_queue_draw`. The `draw` vfunc now handles all painting; GTK3 already
@@ -239,15 +239,18 @@ plugins, this means 20 X11 round-trips per resize to copy the wallpaper.
 **Fix:** Cache the last-copied pixmap keyed on root pixmap ID + screen size; invalidate
 on the "changed" signal from `FbBg`.
 
-#### M-5: `pager.c` — stubbed WM_HINTS icon loading
+#### M-5: `pager.c` — WM_HINTS icon loading
 
-- **File:** `plugins/pager/pager.c` (lines 510-525)
-- **Status:** Acceptable stub; fix if needed
+- **File:** `plugins/pager/pager.c` (lines 511-577)
+- **Status:** Fixed — implemented using `cairo_xlib_surface_create`
 
-`_wnck_gdk_pixbuf_get_from_pixmap` always returns `NULL` (GTK3 port stub). Windows with
-only WM_HINTS icons (not NetWM `_NET_WM_ICON`) show no icon in the pager.
-
-**Fix:** Implement using `cairo_xlib_surface_create` (same pattern as `bg.c`).
+`_wnck_gdk_pixbuf_get_from_pixmap` has a full implementation: it uses
+`cairo_xlib_surface_create` (colour pixmaps) and
+`cairo_xlib_surface_create_for_bitmap` (1-bit masks), copies to a
+`cairo_image_surface_t`, then calls `gdk_pixbuf_get_from_surface`. Both
+`get_netwm_icon` (_NET_WM_ICON) and `get_wm_icon` (WM_HINTS pixmap/mask) are
+implemented and called from `do_net_client_list_stacking`. This was a stub in
+the original GTK3 port but is now complete.
 
 ---
 
@@ -286,7 +289,8 @@ only WM_HINTS icons (not NetWM `_NET_WM_ICON`) show no icon in the pager.
 | `plugins/taskbar/taskbar_net.c` | None | None | Clean |
 | `plugins/taskbar/taskbar.c` | None | None | Clean |
 | `plugins/tray/main.c` | None | ~~M-2~~ (fixed v8.3.11) | Clean |
-| `plugins/pager/pager.c` | None | M-5, L-2 | Acceptable stubs |
+| `plugins/pager/pager.c` | None | ~~H-1~~ (fixed v8.3.22), ~~M-5~~ (implemented), L-2 | L-2 (wallpaper) is an acceptable stub |
+| `plugins/icons/icons.c` | None | ~~H-1~~ (fixed v8.3.22) | Clean |
 | `plugins/chart/chart.c` | None | None | Clean |
 | `plugins/cpu/cpu.c` | None | None | Clean |
 | `plugins/net/net.c` | None | None | Clean |
@@ -300,10 +304,11 @@ only WM_HINTS icons (not NetWM `_NET_WM_ICON`) show no icon in the pager.
 | Version | Issue | Change |
 |---------|-------|--------|
 | **v8.3.7** | C-1 | `gtkbar.c`: call parent `size_allocate`; remove manual `gtk_widget_set_allocation` and `gtk_widget_queue_draw` |
-| **v8.3.8** | H-1/M-3 | `gtkbgbox.c`: remove `gdk_window_add_filter` + `gtk_bgbox_event_filter`; move redraw to `configure_event` vfunc |
-| **v8.3.9** | H-1 | `taskbar_ui.c`: replace global `gdk_window_add_filter(NULL, ...)` — needs design decision (see notes) |
+| **v8.3.8** | H-1/M-3 | `gtkbgbox.c`: remove `gdk_window_add_filter` + `gtk_bgbox_event_filter`; GTK3 queues redraw on configure automatically |
+| **v8.3.9** | H-1 | `taskbar_ui.c`: replace `gdk_window_add_filter(NULL, ...)` with per-window `gdk_window_add_filter(tk->gdkwin, ...)` |
 | **v8.3.10** | H-2 | `taskbar_ui.c`: fix `queue_resize` from `size-allocate` signal via `g_idle_add` |
 | **v8.3.11** | M-1, M-2, L-1 | `panel.c` signal type fix; tray `events_pending` → `queue_resize`; update help text |
+| **v8.3.22** | H-1 | `pager.c`, `icons.c`: replace `gdk_window_add_filter(NULL, ...)` with per-window filters using same pattern as taskbar |
 
 ---
 
@@ -371,34 +376,6 @@ gtk_bgbox_configure_event(GtkWidget *widget, GdkEventConfigure *e)
 ```
 Note: GTK3 already queues a redraw on configure in most cases, so this may not be
 necessary. Test without it first.
-
-### taskbar gdk_window_add_filter replacement (v8.3.9 — requires design decision)
-
-The current code uses `gdk_window_add_filter(NULL, ...)` which installs a **global**
-filter on ALL X events. `tb_event_filter` handles:
-1. `PropertyNotify` on the root window → update `_NET_CLIENT_LIST`, `_NET_ACTIVE_WINDOW`, etc.
-2. `PropertyNotify` on tracked client windows → update title, icon, state
-
-For case 1, the correct GTK3 replacement is to pass the root GdkWindow explicitly:
-```c
-GdkDisplay *dpy = gdk_display_get_default();
-GdkScreen  *scr = gdk_display_get_default_screen(dpy);
-GdkWindow  *root = gdk_screen_get_root_window(scr);
-gdk_window_add_filter(root, (GdkFilterFunc)tb_event_filter, tb);
-```
-
-For case 2, tracked client windows need `XSelectInput` (already done) **plus** either:
-- A per-window `gdk_window_add_filter` call added when the window is first tracked
-  (and removed when it's untracked) — still valid in GTK 3.24.x
-- Or a global Xlib event handler set up outside GDK via `gdk_event_handler_set`
-
-**Recommendation:** Use per-window `gdk_window_add_filter` for tracked windows
-(mirrors the existing pattern and avoids global filtering). This still uses
-`gdk_window_add_filter` but on specific windows rather than globally, which is
-significantly better behaved and still works in GTK 3.24.x.
-
-This change needs careful testing — the taskbar's window tracking is the most
-complex part of the codebase.
 
 ---
 

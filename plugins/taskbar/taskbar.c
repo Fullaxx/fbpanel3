@@ -1,25 +1,26 @@
 #include "taskbar_priv.h"
 
 static const gchar *taskbar_css =
-    /* Normal state: medium-gray gradient visible against dark/transparent panel */
+    /* Normal state: light gray — clearly visible against the dark panel */
     "#taskbar button {"
     "  padding: 1px 2px; margin: 1px; outline-width: 0;"
-    "  background: linear-gradient(to bottom, #707070, #585858);"
-    "  border: 1px solid #2a2a2a;"
+    "  background: linear-gradient(to bottom, #aaaaaa, #888888);"
+    "  border: 1px solid #555555;"
     "  border-radius: 3px;"
+    "  box-shadow: none;"
     "}"
     /* Hover: slightly lighter */
     "#taskbar button:hover {"
-    "  background: linear-gradient(to bottom, #808080, #686868);"
+    "  background: linear-gradient(to bottom, #c0c0c0, #9a9a9a);"
     "}"
-    /* Active (focused window): darker / pressed look */
+    /* Active (focused window): mid-gray pressed look */
     "#taskbar button:active {"
-    "  background: linear-gradient(to bottom, #484848, #363636);"
-    "  border-color: #181818;"
+    "  background: linear-gradient(to bottom, #707070, #585858);"
+    "  border-color: #333333;"
     "}"
-    /* Label text: near-white so it reads on gray */
+    /* Label text: dark so it reads on light-gray buttons */
     "#taskbar button label {"
-    "  color: #f0f0f0;"
+    "  color: #111111;"
     "}";
 
 int

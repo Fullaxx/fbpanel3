@@ -1,3 +1,13 @@
+## Version: 8.3.17
+* taskbar: increase button brightness so buttons are clearly visible on a
+  dark/transparent panel without a GTK theme (R-1 follow-up).
+  The v8.3.12 CSS colors (#585858–#707070 on a #333333 panel) were too
+  dark to read in practice.  Lightened to #888888–#aaaaaa for normal
+  state; label text changed to #111111 (dark on light).  Added
+  box-shadow:none to suppress any theme shadow that could obscure the
+  background gradient.  Active (focused) buttons remain a distinctly
+  darker shade for contrast.
+
 ## Version: 8.3.16
 * bg.c: cache the full root pixmap as a CPU-side cairo_image_surface_t (M-4).
   Previously fb_bg_get_xroot_pix_for_win() and fb_bg_get_xroot_pix_for_area()

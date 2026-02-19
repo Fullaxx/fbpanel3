@@ -1,3 +1,14 @@
+## Version: 8.3.18
+* taskbar: fix CSS button styling by using a direct style class instead of
+  a descendant selector (R-1 root-cause fix).
+  The selector "#taskbar button" failed to match because GTK3's CSS node
+  propagation does not reliably cross the GtkBar (box) node that sits
+  between the named ancestor and the button nodes.  Switch to a ".tb-button"
+  class added directly to each button's GtkStyleContext via
+  gtk_style_context_add_class() in tk_build_gui(), with the CSS provider
+  targeting ".tb-button" instead.  This guarantees the rules apply regardless
+  of widget hierarchy depth.
+
 ## Version: 8.3.17
 * taskbar: increase button brightness so buttons are clearly visible on a
   dark/transparent panel without a GTK theme (R-1 follow-up).

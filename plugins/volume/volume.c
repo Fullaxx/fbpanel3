@@ -247,7 +247,7 @@ volume_constructor(plugin_instance *p)
         return 0;
     c = (volume_priv *) p;
     if ((c->fd = open ("/dev/mixer", O_RDWR, 0)) < 0) {
-        ERR("volume: can't open /dev/mixer\n");
+        g_message("volume: /dev/mixer not available — plugin disabled");
         return 0;
     }
     k->set_icons(&c->meter, names);

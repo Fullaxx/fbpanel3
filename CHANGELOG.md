@@ -1,3 +1,15 @@
+## Version: 8.3.20
+* panel: make plugin start failures non-fatal (skip plugin, continue).
+  Previously panel_parse_plugin() called exit(1) when any plugin's
+  constructor returned 0, killing the entire panel.  Replace exit(1)
+  with plugin_put(plug) + return so the failed plugin is cleanly
+  unloaded and the panel continues with the remaining plugins.
+* volume: change hard ERR to g_message when /dev/mixer is unavailable.
+  In containers or systems without OSS/ALSA mixer support the volume
+  plugin now silently disables itself instead of triggering the (now
+  non-fatal) failure path.  The default config no longer needs to
+  comment out the volume plugin on audio-less systems.
+
 ## Version: 8.3.19
 * taskbar: replace CSS button styling with cairo draw handler (R-1 final fix).
   Three successive CSS attempts (v8.3.12, v8.3.17, v8.3.18) all produced no

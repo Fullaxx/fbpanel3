@@ -747,8 +747,9 @@ panel_parse_plugin(xconf *xc)
     plug->xc = xconf_find(xc, "config", 0);
 
     if (!plugin_start(plug)) {
-        ERR( "fbpanel: can't start plugin %s\n", type);
-        exit(1);
+        g_message("fbpanel: plugin '%s' failed to start — skipping", type);
+        plugin_put(plug);
+        return;
     }
     p->plugins = g_list_append(p->plugins, plug);
 }

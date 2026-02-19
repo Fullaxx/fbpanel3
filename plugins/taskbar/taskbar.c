@@ -1,27 +1,5 @@
 #include "taskbar_priv.h"
 
-static const gchar *taskbar_css =
-    /* Use class .tb-button applied directly to each GtkButton widget.
-     * A descendant selector like "#taskbar button" can fail to match in
-     * GTK3 when the GtkBar (box) CSS node sits between the named ancestor
-     * and the button node. */
-    ".tb-button {"
-    "  padding: 1px 2px; margin: 1px; outline-width: 0;"
-    "  background: linear-gradient(to bottom, #aaaaaa, #888888);"
-    "  border: 1px solid #555555;"
-    "  border-radius: 3px;"
-    "  box-shadow: none;"
-    "}"
-    ".tb-button:hover {"
-    "  background: linear-gradient(to bottom, #c0c0c0, #9a9a9a);"
-    "}"
-    ".tb-button:active {"
-    "  background: linear-gradient(to bottom, #707070, #585858);"
-    "  border-color: #333333;"
-    "}"
-    ".tb-button label {"
-    "  color: #111111;"
-    "}";
 
 int
 taskbar_constructor(plugin_instance *p)
@@ -31,14 +9,6 @@ taskbar_constructor(plugin_instance *p)
     xconf *xc = p->xc;
 
     tb = (taskbar_priv *) p;
-    gtk_widget_set_name(p->pwid, "taskbar");
-    {
-        GtkCssProvider *css = gtk_css_provider_new();
-        gtk_css_provider_load_from_data(css, taskbar_css, -1, NULL);
-        gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
-            GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-        g_object_unref(css);
-    }
     get_button_spacing(&req, GTK_CONTAINER(p->pwid), "");
     net_active_detect();
 

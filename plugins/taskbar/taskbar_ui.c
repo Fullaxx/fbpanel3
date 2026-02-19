@@ -1,4 +1,67 @@
+#include <math.h>
 #include "taskbar_priv.h"
+
+/* Paint the task button background with cairo, bypassing GTK3 theme/CSS.
+ * Connected to the "draw" signal (not "draw-after"), so we run before GTK's
+ * default button draw.  We return TRUE to suppress GTK's drawing, then
+ * propagate to the child (image+label box) ourselves. */
+static gboolean
+tk_button_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
+{
+    GtkStateFlags state;
+    int w, h;
+    double r1, r2, r3;
+    cairo_pattern_t *pat;
+    GtkWidget *child;
+
+    w = gtk_widget_get_allocated_width(widget);
+    h = gtk_widget_get_allocated_height(widget);
+    state = gtk_widget_get_state_flags(widget);
+
+    pat = cairo_pattern_create_linear(0, 0, 0, h);
+    if (state & GTK_STATE_FLAG_ACTIVE) {
+        /* focused window: darker pressed look */
+        cairo_pattern_add_color_stop_rgb(pat, 0, 0.44, 0.44, 0.44);
+        cairo_pattern_add_color_stop_rgb(pat, 1, 0.35, 0.35, 0.35);
+    } else if (state & GTK_STATE_FLAG_PRELIGHT) {
+        /* hover: slightly lighter */
+        cairo_pattern_add_color_stop_rgb(pat, 0, 0.75, 0.75, 0.75);
+        cairo_pattern_add_color_stop_rgb(pat, 1, 0.60, 0.60, 0.60);
+    } else {
+        /* normal: light gray */
+        cairo_pattern_add_color_stop_rgb(pat, 0, 0.67, 0.67, 0.67);
+        cairo_pattern_add_color_stop_rgb(pat, 1, 0.53, 0.53, 0.53);
+    }
+
+    /* Rounded rectangle fill */
+    r1 = 3.0;
+    cairo_new_path(cr);
+    cairo_arc(cr,   r1,   r1, r1,  M_PI,       -M_PI / 2.0);
+    cairo_arc(cr, w-r1,   r1, r1, -M_PI / 2.0,  0.0);
+    cairo_arc(cr, w-r1, h-r1, r1,  0.0,          M_PI / 2.0);
+    cairo_arc(cr,   r1, h-r1, r1,  M_PI / 2.0,  M_PI);
+    cairo_close_path(cr);
+    cairo_set_source(cr, pat);
+    cairo_fill_preserve(cr);
+    cairo_pattern_destroy(pat);
+
+    /* Border */
+    r2 = 0.33;
+    cairo_set_source_rgb(cr, r2, r2, r2);
+    cairo_set_line_width(cr, 1.0);
+    cairo_stroke(cr);
+
+    /* Label text colour: dark on light-gray background */
+    r3 = 0.07;
+    cairo_set_source_rgb(cr, r3, r3, r3);
+
+    /* Draw the button's child widget (HBox with icon + label) */
+    child = gtk_bin_get_child(GTK_BIN(widget));
+    if (child)
+        gtk_container_propagate_draw(GTK_CONTAINER(widget), child, cr);
+
+    return TRUE; /* suppress GTK's default button rendering */
+}
 
 static void
 tk_callback_leave( GtkWidget *widget, task *tk)
@@ -221,8 +284,8 @@ tk_build_gui(taskbar_priv *tb, task *tk)
     tk->button = gtk_button_new();
     /* gtk_button_new() has no child in GTK3; halign is set per-widget on
      * tk->image and tk->label below after they are created */
-    gtk_style_context_add_class(gtk_widget_get_style_context(tk->button),
-        "tb-button");
+    g_signal_connect(G_OBJECT(tk->button), "draw",
+        G_CALLBACK(tk_button_draw), NULL);
     gtk_widget_show(tk->button);
     gtk_container_set_border_width(GTK_CONTAINER(tk->button), 0);
     gtk_widget_add_events (tk->button, GDK_BUTTON_RELEASE_MASK

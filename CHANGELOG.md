@@ -1,3 +1,14 @@
+## Version: 8.3.19
+* taskbar: replace CSS button styling with cairo draw handler (R-1 final fix).
+  Three successive CSS attempts (v8.3.12, v8.3.17, v8.3.18) all produced no
+  visible change in the VNC test containers — GTK3's CSS cascade is unreliable
+  in minimal/themeless environments regardless of provider priority.
+  Replace the CSS approach with a "draw" signal handler on each task button.
+  The handler paints a light-gray gradient background and rounded border with
+  cairo, then propagates drawing to the button's child (icon+label) and returns
+  TRUE to suppress GTK's default button rendering.  This bypasses the theme/CSS
+  pipeline entirely and guarantees visible buttons in all environments.
+
 ## Version: 8.3.18
 * taskbar: fix CSS button styling by using a direct style class instead of
   a descendant selector (R-1 root-cause fix).

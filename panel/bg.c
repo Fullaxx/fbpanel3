@@ -59,6 +59,10 @@ struct _FbBg {
     GC       gc;
     Display *dpy;
     Pixmap   pixmap;
+
+    /* Root pixmap cache — avoids repeated X11 round-trips per plugin widget */
+    cairo_surface_t *cache;        /* full root pixmap as CPU image; NULL = invalid */
+    Pixmap           cache_pixmap; /* bg->pixmap value when cache was filled */
 };
 
 static void fb_bg_class_init (FbBgClass *klass);
@@ -66,6 +70,7 @@ static void fb_bg_init (FbBg *monitor);
 static void fb_bg_finalize (GObject *object);
 static void fb_bg_changed(FbBg *monitor);
 static Pixmap fb_bg_get_xrootpmap_real(FbBg *bg);
+static gboolean fb_bg_ensure_cache(FbBg *bg);
 
 static guint signals [LAST_SIGNAL] = { 0 };
 
@@ -154,6 +159,10 @@ fb_bg_finalize (GObject *object)
     FbBg *bg;
 
     bg = FB_BG (object);
+    if (bg->cache) {
+        cairo_surface_destroy(bg->cache);
+        bg->cache = NULL;
+    }
     XFreeGC(bg->dpy, bg->gc);
     default_bg = NULL;
 
@@ -200,23 +209,35 @@ fb_bg_get_xrootpmap_real(FbBg *bg)
 
 
 
-cairo_surface_t *
-fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y, gint width, gint height)
+/* Ensure bg->cache holds a CPU-side copy of the current root pixmap.
+ * Returns TRUE if the cache is valid and ready to use.
+ * Cache is invalidated by fb_bg_changed() when the wallpaper changes. */
+static gboolean
+fb_bg_ensure_cache(FbBg *bg)
 {
-    cairo_surface_t *gbgpix;
     cairo_surface_t *xlib_surf;
-    guint  rpw, rph, rpborder, rpdepth;
+    guint rpw, rph, rpborder, rpdepth;
     Window dummy;
     int rpx, rpy;
     cairo_t *cr;
 
     if (bg->pixmap == None)
-        return NULL;
+        return FALSE;
+
+    /* Cache hit: same pixmap ID as when we last filled the cache */
+    if (bg->cache && bg->cache_pixmap == bg->pixmap)
+        return TRUE;
+
+    /* Cache miss: free stale entry and refill from X server */
+    if (bg->cache) {
+        cairo_surface_destroy(bg->cache);
+        bg->cache = NULL;
+    }
 
     if (!XGetGeometry(bg->dpy, bg->pixmap, &dummy, &rpx, &rpy,
                       &rpw, &rph, &rpborder, &rpdepth)) {
         ERR("XGetGeometry on root pixmap failed\n");
-        return NULL;
+        return FALSE;
     }
 
     xlib_surf = cairo_xlib_surface_create(
@@ -225,22 +246,49 @@ fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y, gint width, gint height)
         (int)rpw, (int)rph);
     if (cairo_surface_status(xlib_surf) != CAIRO_STATUS_SUCCESS) {
         cairo_surface_destroy(xlib_surf);
-        return NULL;
+        return FALSE;
     }
+
+    bg->cache = cairo_image_surface_create(CAIRO_FORMAT_RGB24, (int)rpw, (int)rph);
+    if (cairo_surface_status(bg->cache) != CAIRO_STATUS_SUCCESS) {
+        ERR("cairo_image_surface_create for root pixmap cache failed\n");
+        cairo_surface_destroy(xlib_surf);
+        cairo_surface_destroy(bg->cache);
+        bg->cache = NULL;
+        return FALSE;
+    }
+
+    cr = cairo_create(bg->cache);
+    cairo_set_source_surface(cr, xlib_surf, 0, 0);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    cairo_surface_destroy(xlib_surf);
+
+    bg->cache_pixmap = bg->pixmap;
+    DBG("root pixmap cached: %ux%u\n", rpw, rph);
+    return TRUE;
+}
+
+cairo_surface_t *
+fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y, gint width, gint height)
+{
+    cairo_surface_t *gbgpix;
+    cairo_t *cr;
+
+    if (!fb_bg_ensure_cache(bg))
+        return NULL;
 
     gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
     if (cairo_surface_status(gbgpix) != CAIRO_STATUS_SUCCESS) {
         ERR("cairo_image_surface_create failed\n");
-        cairo_surface_destroy(xlib_surf);
         cairo_surface_destroy(gbgpix);
         return NULL;
     }
 
     cr = cairo_create(gbgpix);
-    cairo_set_source_surface(cr, xlib_surf, -x, -y);
+    cairo_set_source_surface(cr, bg->cache, -x, -y);
     cairo_paint(cr);
     cairo_destroy(cr);
-    cairo_surface_destroy(xlib_surf);
     return gbgpix;
 }
 
@@ -250,13 +298,11 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
     Window win;
     Window dummy;
     cairo_surface_t *gbgpix;
-    cairo_surface_t *xlib_surf;
     guint  width, height, border, depth;
-    guint  rpw, rph, rpborder, rpdepth;
-    int  x, y, rpx, rpy;
+    int  x, y;
     cairo_t *cr;
 
-    if (bg->pixmap == None)
+    if (!fb_bg_ensure_cache(bg))
         return NULL;
 
     win = GDK_WINDOW_XID(gtk_widget_get_window(widget));
@@ -271,34 +317,17 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
     XTranslateCoordinates(bg->dpy, win, bg->xroot, 0, 0, &x, &y, &dummy);
     DBG("win=%lx %dx%d%+d%+d\n", win, width, height, x, y);
 
-    if (!XGetGeometry(bg->dpy, bg->pixmap, &dummy, &rpx, &rpy,
-                      &rpw, &rph, &rpborder, &rpdepth)) {
-        ERR("XGetGeometry on root pixmap failed\n");
-        return NULL;
-    }
-
-    xlib_surf = cairo_xlib_surface_create(
-        bg->dpy, bg->pixmap,
-        DefaultVisual(bg->dpy, DefaultScreen(bg->dpy)),
-        (int)rpw, (int)rph);
-    if (cairo_surface_status(xlib_surf) != CAIRO_STATUS_SUCCESS) {
-        cairo_surface_destroy(xlib_surf);
-        return NULL;
-    }
-
-    gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
+    gbgpix = cairo_image_surface_create(CAIRO_FORMAT_RGB24, (int)width, (int)height);
     if (cairo_surface_status(gbgpix) != CAIRO_STATUS_SUCCESS) {
         ERR("cairo_image_surface_create failed\n");
-        cairo_surface_destroy(xlib_surf);
         cairo_surface_destroy(gbgpix);
         return NULL;
     }
 
     cr = cairo_create(gbgpix);
-    cairo_set_source_surface(cr, xlib_surf, -x, -y);
+    cairo_set_source_surface(cr, bg->cache, -x, -y);
     cairo_paint(cr);
     cairo_destroy(cr);
-    cairo_surface_destroy(xlib_surf);
     return gbgpix;
 }
 
@@ -306,6 +335,13 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
 static void
 fb_bg_changed(FbBg *bg)
 {
+    /* Invalidate the cached root pixmap — will be refilled on next request */
+    if (bg->cache) {
+        cairo_surface_destroy(bg->cache);
+        bg->cache = NULL;
+    }
+    bg->cache_pixmap = None;
+
     bg->pixmap = fb_bg_get_xrootpmap_real(bg);
     if (bg->pixmap != None) {
         XGCValues  gcv;

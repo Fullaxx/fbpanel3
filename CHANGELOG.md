@@ -1,3 +1,15 @@
+## Version: 8.3.16
+* bg.c: cache the full root pixmap as a CPU-side cairo_image_surface_t (M-4).
+  Previously fb_bg_get_xroot_pix_for_win() and fb_bg_get_xroot_pix_for_area()
+  each performed 1 XGetGeometry + 1 cairo_xlib_surface_create + 1 full X→CPU
+  pixel transfer per call.  With N plugins sharing a transparent background,
+  each wallpaper change triggered N independent X11 round-trips.
+  The new fb_bg_ensure_cache() helper fills the cache once on the first call
+  after a wallpaper change (or at startup), keyed on the root Pixmap ID.
+  Subsequent per-widget calls crop from the in-memory cache with no additional
+  X11 round-trips.  Cache is freed and reset in fb_bg_changed() and
+  fb_bg_finalize().
+
 ## Version: 8.3.15
 * pager: implement WM_HINTS icon loading from X Pixmaps (M-5).
   _wnck_gdk_pixbuf_get_from_pixmap was a GTK3-port stub that always

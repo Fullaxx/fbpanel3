@@ -1,3 +1,10 @@
+## Version: 8.3.26
+* docs: add full Doxygen-style comments to panel/bg.h and panel/bg.c.
+  Documents the FbBg singleton pattern, the internal root-pixmap cache
+  design (cache hit/miss logic, why xlib surfaces are transient), surface
+  ownership (transfer full to callers), finalize behaviour, and cross-
+  references to BUG-002 (default_bg singleton assumption). No logic changes.
+
 ## Version: 8.3.25
 * docs: add full Doxygen-style comments to panel/xconf.h and panel/xconf.c.
   Documents every function's contract, parameter ownership (transfer none vs

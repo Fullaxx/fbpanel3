@@ -1,3 +1,33 @@
+/**
+ * @file bg.c
+ * @brief FbBg — root-pixmap background monitor and cache (implementation).
+ *
+ * FbBg maintains a CPU-side copy of the X11 root pixmap so that multiple
+ * GtkBgbox widgets can obtain background slices without round-tripping to
+ * the X server on every draw.
+ *
+ * INTERNAL CACHE DESIGN
+ * ----------------------
+ * bg->cache          — cairo_image_surface_t holding a full CPU copy of the
+ *                      current root pixmap.  NULL when invalid.
+ * bg->cache_pixmap   — the Pixmap XID that was used to fill the cache.
+ *                      Cache is valid only when bg->pixmap == bg->cache_pixmap.
+ *
+ * On a wallpaper change (fb_bg_changed):
+ *   1. bg->cache is destroyed (set to NULL).
+ *   2. bg->pixmap is re-read from _XROOTPMAP_ID.
+ *   3. Next call to fb_bg_ensure_cache() refills bg->cache from the new pixmap.
+ *
+ * SURFACE LIFECYCLE
+ * -----------------
+ * bg->cache          — owned by FbBg; destroyed in fb_bg_changed() and
+ *                      fb_bg_finalize().
+ * slices returned by fb_bg_get_xroot_pix_for_win/area — (transfer full) to
+ * caller; caller must cairo_surface_destroy() them.
+ *
+ * See also: docs/MEMORY_MODEL.md §3.
+ */
+
 /*
  * fb-background-monitor.c:
  *
@@ -40,17 +70,36 @@
 #include "dbg.h"
 
 
+/** GObject signal indices for FbBg. */
 enum {
-    CHANGED,
+    CHANGED,      /**< Emitted when the root pixmap changes. */
     LAST_SIGNAL
 };
 
 
+/**
+ * _FbBgClass - GObject class struct for FbBg.
+ * @parent_class: GObjectClass; must be first.
+ * @changed:      Default handler for the "changed" signal.
+ */
 struct _FbBgClass {
     GObjectClass   parent_class;
     void         (*changed) (FbBg *monitor);
 };
 
+/**
+ * _FbBg - GObject instance struct for the background monitor.
+ * @parent_instance: GObject base; must be first.
+ * @xroot:           X11 root window XID (DefaultRootWindow).
+ * @id:              Atom for "_XROOTPMAP_ID" used to query the wallpaper.
+ * @gc:              X11 GC for tile-fill operations; always valid after init.
+ * @dpy:             X11 Display pointer; valid for the lifetime of FbBg.
+ * @pixmap:          Current root Pixmap XID from _XROOTPMAP_ID; None if unset.
+ * @cache:           CPU-side cairo_image_surface copy of the root pixmap.
+ *                   NULL when invalid.  Owned by FbBg.
+ * @cache_pixmap:    bg->pixmap value when @cache was filled; used to detect
+ *                   pixmap replacement without a signal (cache invalidation).
+ */
 struct _FbBg {
     GObject    parent_instance;
 
@@ -74,8 +123,12 @@ static gboolean fb_bg_ensure_cache(FbBg *bg);
 
 static guint signals [LAST_SIGNAL] = { 0 };
 
+/** The process-wide FbBg singleton; NULL after finalize. */
 static FbBg *default_bg = NULL;
 
+/**
+ * fb_bg_get_type - return the GType for FbBg, registering it on first call.
+ */
 GType
 fb_bg_get_type (void)
 {
@@ -102,7 +155,13 @@ fb_bg_get_type (void)
 }
 
 
-
+/**
+ * fb_bg_class_init - initialise the FbBgClass.
+ * @klass: Class struct to fill.
+ *
+ * Registers the "changed" GObject signal and sets fb_bg_changed as the
+ * default handler.  Installs fb_bg_finalize as the GObject finalize hook.
+ */
 static void
 fb_bg_class_init (FbBgClass *klass)
 {
@@ -120,6 +179,16 @@ fb_bg_class_init (FbBgClass *klass)
     return;
 }
 
+/**
+ * fb_bg_init - instance initialiser for FbBg.
+ * @bg: Newly allocated FbBg instance.
+ *
+ * Connects to the default X11 display, interns _XROOTPMAP_ID, reads the
+ * current root pixmap, and creates an X11 GC for tile-fill operations.
+ *
+ * If _XROOTPMAP_ID is not set (no wallpaper setter running), logs a
+ * human-readable message — transparent backgrounds will not work.
+ */
 static void
 fb_bg_init (FbBg *bg)
 {
@@ -147,12 +216,29 @@ fb_bg_init (FbBg *bg)
 }
 
 
+/**
+ * fb_bg_new - allocate a new FbBg instance.
+ *
+ * Returns: (transfer full) new FbBg; caller must g_object_unref().
+ */
 FbBg *
 fb_bg_new()
 {
     return g_object_new (FB_TYPE_BG, NULL);
 }
 
+/**
+ * fb_bg_finalize - GObject finalize handler for FbBg.
+ * @object: GObject being finalized (an FbBg instance).
+ *
+ * Destroys the cairo cache surface, frees the X11 GC, and clears
+ * the global default_bg pointer so the singleton can be re-created.
+ *
+ * Note: sets default_bg = NULL unconditionally.  Since the GTK main
+ * loop is single-threaded, no race between finalize and
+ * fb_bg_get_for_display() is possible in normal operation.
+ * See BUG-002 in docs/BUGS_AND_ISSUES.md.
+ */
 static void
 fb_bg_finalize (GObject *object)
 {
@@ -169,12 +255,29 @@ fb_bg_finalize (GObject *object)
     return;
 }
 
+/**
+ * fb_bg_get_xrootpmap - return the cached root Pixmap XID.
+ * @bg: FbBg instance.
+ *
+ * Returns: bg->pixmap (an X11 Pixmap XID), or None if unset.
+ *   This is a server-side object; do not destroy it.
+ */
 Pixmap
 fb_bg_get_xrootpmap(FbBg *bg)
 {
     return bg->pixmap;
 }
 
+/**
+ * fb_bg_get_xrootpmap_real - query _XROOTPMAP_ID from the X server.
+ * @bg: FbBg instance with dpy, xroot, and id initialised.
+ *
+ * Calls XGetWindowProperty twice (retry loop with c=2) to handle the
+ * case where the property changes between the size query and the data fetch.
+ *
+ * Returns: Pixmap XID read from the property, or None if the property
+ *   is absent or not of type XA_PIXMAP.
+ */
 static Pixmap
 fb_bg_get_xrootpmap_real(FbBg *bg)
 {
@@ -199,7 +302,7 @@ fb_bg_get_xrootpmap_real(FbBg *bg)
                     ret = *((Pixmap *)prop);
                     c = -c ; //to quit loop
                 }
-                XFree(prop);
+                XFree(prop);   /* prop is X11-heap; always XFree, never g_free */
             }
         } while (--c > 0);
     }
@@ -208,10 +311,21 @@ fb_bg_get_xrootpmap_real(FbBg *bg)
 }
 
 
-
-/* Ensure bg->cache holds a CPU-side copy of the current root pixmap.
- * Returns TRUE if the cache is valid and ready to use.
- * Cache is invalidated by fb_bg_changed() when the wallpaper changes. */
+/**
+ * fb_bg_ensure_cache - ensure bg->cache holds the current root pixmap image.
+ * @bg: FbBg instance.
+ *
+ * Cache hit (bg->cache_pixmap == bg->pixmap): returns TRUE immediately.
+ * Cache miss: destroys any stale cache, creates a temporary cairo_xlib_surface
+ * wrapping the root Pixmap, blits it into a new cairo_image_surface (CPU-side),
+ * then destroys the xlib surface.  Sets bg->cache_pixmap = bg->pixmap.
+ *
+ * The xlib surface is intentionally transient — it exists only during the
+ * blit — so callers never need to deal with X drawable lifetimes.
+ *
+ * Returns: TRUE if bg->cache is valid and ready; FALSE if bg->pixmap is None
+ *   or if any X or cairo operation fails.
+ */
 static gboolean
 fb_bg_ensure_cache(FbBg *bg)
 {
@@ -262,13 +376,25 @@ fb_bg_ensure_cache(FbBg *bg)
     cairo_set_source_surface(cr, xlib_surf, 0, 0);
     cairo_paint(cr);
     cairo_destroy(cr);
-    cairo_surface_destroy(xlib_surf);
+    cairo_surface_destroy(xlib_surf);  /* xlib surface no longer needed */
 
     bg->cache_pixmap = bg->pixmap;
     DBG("root pixmap cached: %ux%u\n", rpw, rph);
     return TRUE;
 }
 
+/**
+ * fb_bg_get_xroot_pix_for_area - crop a slice from the cached root pixmap.
+ * @bg:     FbBg instance.
+ * @x:      Root-window X of the top-left corner.
+ * @y:      Root-window Y of the top-left corner.
+ * @width:  Slice width in pixels.
+ * @height: Slice height in pixels.
+ *
+ * Returns: (transfer full) new cairo_image_surface_t (CAIRO_FORMAT_RGB24)
+ *   containing the requested area, or NULL if no root pixmap is available.
+ *   Caller must cairo_surface_destroy() the returned surface.
+ */
 cairo_surface_t *
 fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y, gint width, gint height)
 {
@@ -289,9 +415,22 @@ fb_bg_get_xroot_pix_for_area(FbBg *bg, gint x, gint y, gint width, gint height)
     cairo_set_source_surface(cr, bg->cache, -x, -y);
     cairo_paint(cr);
     cairo_destroy(cr);
-    return gbgpix;
+    return gbgpix;  /* (transfer full) to caller */
 }
 
+/**
+ * fb_bg_get_xroot_pix_for_win - crop a background slice matching @widget's area.
+ * @bg:     FbBg instance.
+ * @widget: Realized GtkWidget whose screen position determines the crop area.
+ *
+ * Translates the widget's GDK window position to root-window coordinates via
+ * XTranslateCoordinates, then crops that rectangle from bg->cache.
+ *
+ * Returns: (transfer full) new cairo_image_surface_t (CAIRO_FORMAT_RGB24),
+ *   or NULL if the root pixmap is unavailable, the widget has zero/one-pixel
+ *   dimensions, or XGetGeometry on the widget window fails.
+ *   Caller must cairo_surface_destroy() the returned surface.
+ */
 cairo_surface_t *
 fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
 {
@@ -328,10 +467,22 @@ fb_bg_get_xroot_pix_for_win(FbBg *bg, GtkWidget *widget)
     cairo_set_source_surface(cr, bg->cache, -x, -y);
     cairo_paint(cr);
     cairo_destroy(cr);
-    return gbgpix;
+    return gbgpix;  /* (transfer full) to caller */
 }
 
 
+/**
+ * fb_bg_changed - default "changed" signal handler.
+ * @bg: FbBg instance receiving the signal.
+ *
+ * Invalidates the CPU-side cache (destroys bg->cache, sets it to NULL)
+ * and re-reads the root pixmap XID from _XROOTPMAP_ID.  Updates the X11 GC
+ * tile to match the new pixmap.
+ *
+ * Connected GtkBgbox instances will call fb_bg_get_xroot_pix_for_win() on
+ * their next resize or explicit background refresh, which triggers
+ * fb_bg_ensure_cache() to refill bg->cache from the new pixmap.
+ */
 static void
 fb_bg_changed(FbBg *bg)
 {
@@ -354,12 +505,31 @@ fb_bg_changed(FbBg *bg)
 }
 
 
+/**
+ * fb_bg_notify_changed_bg - emit the "changed" signal on @bg.
+ * @bg: FbBg instance.
+ *
+ * Call this from the X11 PropertyNotify handler when _XROOTPMAP_ID changes.
+ * The default signal handler (fb_bg_changed) invalidates the cache and
+ * re-reads the pixmap; all connected GtkBgbox instances then refresh.
+ */
 void fb_bg_notify_changed_bg(FbBg *bg)
 {
     g_signal_emit (bg, signals [CHANGED], 0);
     return;
 }
 
+/**
+ * fb_bg_get_for_display - obtain the FbBg singleton for the default display.
+ *
+ * First call: allocates a new FbBg (refcount 1) and stores it in default_bg.
+ * Subsequent calls: increments refcount via g_object_ref() and returns the
+ * same instance.
+ *
+ * Returns: (transfer full) the FbBg singleton.  Caller must g_object_unref()
+ *   when done.  After the last unref, fb_bg_finalize() sets default_bg = NULL
+ *   so the singleton can be re-created on the next call.
+ */
 FbBg *fb_bg_get_for_display(void)
 {
     if (!default_bg)
@@ -368,4 +538,3 @@ FbBg *fb_bg_get_for_display(void)
         g_object_ref(default_bg);
     return default_bg;
 }
-

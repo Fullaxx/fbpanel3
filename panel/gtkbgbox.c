@@ -1,3 +1,52 @@
+/**
+ * @file gtkbgbox.c
+ * @brief GtkBgbox — background-painting GtkBin subclass (implementation).
+ *
+ * GtkBgbox is the primary visible container in the panel.  It is used for:
+ *   - panel->bbox: the panel background behind all plugins.
+ *   - each plugin->pwid: the per-plugin container.
+ *
+ * PRIVATE STATE (GtkBgboxPrivate)
+ * --------------------------------
+ * @pixmap:    cairo_image_surface_t holding the current background image.
+ *             NULL when not in use (BG_STYLE mode or no root pixmap).
+ *             Owned by GtkBgbox; destroyed in gtk_bgbox_set_background()
+ *             (before refresh) and in gtk_bgbox_finalize().
+ * @tintcolor: 0xRRGGBB tint colour applied in BG_ROOT mode.
+ * @alpha:     Tint opacity 0–255 applied over the root pixmap slice.
+ * @bg_type:   Current background mode (BG_NONE/BG_STYLE/BG_ROOT/BG_INHERIT).
+ * @bg:        FbBg singleton reference; non-NULL only in BG_ROOT/BG_INHERIT
+ *             modes.  Obtained via fb_bg_get_for_display() (transfer full);
+ *             released with g_object_unref() in finalize or on mode switch.
+ * @sid:       GLib signal handler ID for the FbBg "changed" signal.
+ *             Disconnected in finalize or on switch to BG_STYLE.
+ *
+ * REALIZE — manual GDK window creation
+ * --------------------------------------
+ * Because has_window = TRUE, GTK3's default realize would assert false.
+ * gtk_bgbox_realize() creates the GDK child window manually, exactly as
+ * GtkLayout and GtkDrawingArea do.  After creation it calls
+ * gtk_bgbox_set_background() to establish the initial BG_STYLE mode.
+ *
+ * SIZE ALLOCATE — parent NOT called
+ * -----------------------------------
+ * gtk_bgbox_size_allocate does NOT call parent_class->size_allocate.
+ * GtkBin::size_allocate would allocate to the child, but GtkBgbox handles
+ * child allocation itself (inset by border_width).  The parent call would
+ * double-allocate — harmlessly but wastefully.  This is intentional and
+ * correct; the CSS gadget trap does not apply here because GtkBin does not
+ * own a CSS gadget in the same way GtkBox does.
+ *
+ * DRAW — layered painting
+ * -------------------------
+ * gtk_bgbox_draw paints three layers in order:
+ *   1. priv->pixmap (root pixmap slice) or CSS background fallback.
+ *   2. Colour tint (priv->tintcolor + priv->alpha) via cairo_paint_with_alpha.
+ *   3. GTK3 child rendering via GTK_WIDGET_CLASS(parent_class)->draw().
+ *
+ * See also: docs/GTK_WIDGET_LIFECYCLE.md §2, docs/MEMORY_MODEL.md §3.
+ */
+
 /* GTK - The GIMP Toolkit
  * Copyright (C) 1995-1997 Peter Mattis, Spencer Kimball and Josh MacDonald
  *
@@ -35,6 +84,18 @@
 //#define DEBUGPRN
 #include "dbg.h"
 
+/**
+ * GtkBgboxPrivate - private per-instance background state.
+ *
+ * @pixmap:    Cached background cairo_image_surface_t for this widget's area.
+ *             (transfer full) owned by GtkBgbox.  NULL = not set / BG_STYLE.
+ * @tintcolor: Tint colour 0xRRGGBB used in BG_ROOT mode.
+ * @alpha:     Tint alpha 0–255; 0 means no tint overlay.
+ * @bg_type:   Active background mode (BG_* enum from gtkbgbox.h).
+ * @bg:        FbBg singleton; non-NULL only when bg_type is BG_ROOT or
+ *             BG_INHERIT.  (transfer full) — released via g_object_unref().
+ * @sid:       g_signal_connect() ID for FbBg "changed"; 0 when disconnected.
+ */
 typedef struct {
     cairo_surface_t *pixmap;
     guint32 tintcolor;
@@ -62,8 +123,16 @@ static void gtk_bgbox_set_bg_root(GtkWidget *widget, GtkBgboxPrivate *priv);
 static void gtk_bgbox_set_bg_inherit(GtkWidget *widget, GtkBgboxPrivate *priv);
 static void gtk_bgbox_bg_changed(FbBg *bg, GtkWidget *widget);
 
+/** Cached parent class pointer; set in gtk_bgbox_class_init. */
 static GtkBinClass *parent_class = NULL;
 
+/**
+ * gtk_bgbox_class_init - initialise GtkBgboxClass.
+ * @class: Class struct to fill.
+ *
+ * Overrides the GtkWidget and GObject vfuncs needed for custom background
+ * painting, manual GDK window management, and private-state cleanup.
+ */
 static void
 gtk_bgbox_class_init (GtkBgboxClass *class)
 {
@@ -83,6 +152,13 @@ gtk_bgbox_class_init (GtkBgboxClass *class)
     object_class->finalize = gtk_bgbox_finalize;
 }
 
+/**
+ * gtk_bgbox_init - instance initialiser for GtkBgbox.
+ * @bgbox: Newly allocated GtkBgbox instance.
+ *
+ * Sets has_window = TRUE (required for custom GDK window creation in realize)
+ * and initialises private state to BG_NONE with no signal connection.
+ */
 static void
 gtk_bgbox_init (GtkBgbox *bgbox)
 {
@@ -96,12 +172,32 @@ gtk_bgbox_init (GtkBgbox *bgbox)
     return;
 }
 
+/**
+ * gtk_bgbox_new - allocate a new GtkBgbox widget.
+ *
+ * Returns: (transfer full) new GtkBgbox as a GtkWidget*.
+ */
 GtkWidget*
 gtk_bgbox_new (void)
 {
     return g_object_new (GTK_TYPE_BGBOX, NULL);
 }
 
+/**
+ * gtk_bgbox_finalize - GObject finalize handler.
+ * @object: GObject being finalized (a GtkBgbox instance).
+ *
+ * Releases the cairo background surface, disconnects the FbBg "changed"
+ * signal, and unrefs the FbBg singleton.  Called by GObject when the last
+ * reference to the widget is dropped (after GTK destroy).
+ *
+ * Cleanup order matters:
+ *   1. cairo_surface_destroy(pixmap)  — must be first; pixmap may hold an
+ *      indirect reference to X resources.
+ *   2. g_signal_handler_disconnect    — stop callbacks before unreffing bg.
+ *   3. g_object_unref(bg)             — may trigger fb_bg_finalize() and
+ *      set default_bg = NULL if this is the last holder.
+ */
 static void
 gtk_bgbox_finalize (GObject *object)
 {
@@ -123,6 +219,23 @@ gtk_bgbox_finalize (GObject *object)
     return;
 }
 
+/**
+ * gtk_bgbox_realize - GtkWidget::realize override.
+ * @widget: GtkBgbox widget being realized.
+ *
+ * Creates the GDK child window manually because has_window = TRUE prevents
+ * calling GTK3's default realize (which asserts !has_window).  Follows the
+ * GtkLayout / GtkDrawingArea pattern:
+ *   1. gtk_widget_set_realized(TRUE)
+ *   2. gdk_window_new() with the widget's allocation and visual
+ *   3. gtk_widget_register_window() + gtk_widget_set_window()
+ *
+ * After creation, applies an initial BG_STYLE background so the widget is
+ * visible even before the caller sets a specific mode.
+ *
+ * Note: the event mask is set before window creation so the GDK window
+ * inherits it automatically.
+ */
 static void
 gtk_bgbox_realize (GtkWidget *widget)
 {
@@ -168,6 +281,15 @@ gtk_bgbox_realize (GtkWidget *widget)
 }
 
 
+/**
+ * gtk_bgbox_style_updated - GtkWidget::style_updated override.
+ * @widget: GtkBgbox widget.
+ *
+ * Calls the parent style_updated to propagate the CSS change, then
+ * refreshes the background slice if the widget is realized and has a window.
+ * This ensures the panel re-reads root-pixmap or CSS colours after a theme
+ * change.
+ */
 static void
 gtk_bgbox_style_updated (GtkWidget *widget)
 {
@@ -181,7 +303,17 @@ gtk_bgbox_style_updated (GtkWidget *widget)
     return;
 }
 
-/* gtk discards configure_event for GTK_WINDOW_CHILD. too pitty */
+/**
+ * gtk_bgbox_configure_event - GtkWidget::configure_event override (no-op).
+ * @widget: GtkBgbox widget.
+ * @e:      Configure event (position/size change of the GDK window).
+ *
+ * GTK discards configure events for GDK_WINDOW_CHILD windows (only
+ * top-level windows normally receive them).  This stub exists for debugging
+ * purposes — the DBG() call logs the event geometry in debug builds.
+ *
+ * Returns: FALSE (event not consumed; propagate normally).
+ */
 static  gboolean
 gtk_bgbox_configure_event (GtkWidget *widget, GdkEventConfigure *e)
 {
@@ -189,6 +321,15 @@ gtk_bgbox_configure_event (GtkWidget *widget, GdkEventConfigure *e)
     return FALSE;
 }
 
+/**
+ * gtk_bgbox_get_preferred_width - GtkWidget::get_preferred_width override.
+ * @widget:  GtkBgbox widget.
+ * @minimum: Set to child's minimum width + border*2.
+ * @natural: Set to child's natural width + border*2.
+ *
+ * Queries the single GtkBin child (if visible) and adds the container's
+ * border_width on both sides.
+ */
 static void
 gtk_bgbox_get_preferred_width(GtkWidget *widget, gint *minimum, gint *natural)
 {
@@ -203,6 +344,12 @@ gtk_bgbox_get_preferred_width(GtkWidget *widget, gint *minimum, gint *natural)
     *natural = child_nat + border * 2;
 }
 
+/**
+ * gtk_bgbox_get_preferred_height - GtkWidget::get_preferred_height override.
+ * @widget:  GtkBgbox widget.
+ * @minimum: Set to child's minimum height + border*2.
+ * @natural: Set to child's natural height + border*2.
+ */
 static void
 gtk_bgbox_get_preferred_height(GtkWidget *widget, gint *minimum, gint *natural)
 {
@@ -217,9 +364,26 @@ gtk_bgbox_get_preferred_height(GtkWidget *widget, gint *minimum, gint *natural)
     *natural = child_nat + border * 2;
 }
 
-/* calls with same allocation are usually refer to exactly same background
- * and we just skip them for optimization reason.
- * so if you see artifacts or unupdated background - reallocate bg on every call
+/**
+ * gtk_bgbox_size_allocate - GtkWidget::size_allocate override.
+ * @widget: GtkBgbox widget.
+ * @wa:     Allocation rectangle assigned by the parent container.
+ *
+ * Does NOT call parent_class->size_allocate (intentional — see file docblock).
+ *
+ * When the allocation changes and the widget is realized:
+ *   1. Moves and resizes the GDK window to match.
+ *   2. Refreshes the background slice (gtk_bgbox_set_background) so the
+ *      wallpaper crop matches the new position.
+ *
+ * Allocates the single GtkBin child within the content area (wa inset by
+ * border_width on each side, clamped to >= 0).
+ *
+ * Note: allocation comparison is done with memcmp to skip the expensive
+ * background refresh when the allocation is unchanged (optimisation).
+ * Artifacts from stale backgrounds would appear if the wallpaper changes
+ * without an allocation change — the FbBg "changed" signal handles that
+ * case via gtk_bgbox_bg_changed().
  */
 static void
 gtk_bgbox_size_allocate (GtkWidget *widget, GtkAllocation *wa)
@@ -257,6 +421,20 @@ gtk_bgbox_size_allocate (GtkWidget *widget, GtkAllocation *wa)
 }
 
 
+/**
+ * gtk_bgbox_draw - GtkWidget::draw override.
+ * @widget: GtkBgbox widget.
+ * @cr:     Cairo context for the widget's GDK window.
+ *
+ * Paints three layers in order:
+ *   1. Background image (priv->pixmap root-pixmap slice), or CSS fallback
+ *      when priv->pixmap is NULL and bg_type == BG_ROOT (no wallpaper set).
+ *   2. Colour tint (priv->tintcolor as RGB + priv->alpha as opacity) via
+ *      cairo_paint_with_alpha — only when priv->alpha != 0.
+ *   3. GTK3 child widget rendering via parent_class->draw().
+ *
+ * Returns: FALSE (event not consumed; allows further drawing).
+ */
 static gboolean
 gtk_bgbox_draw(GtkWidget *widget, cairo_t *cr)
 {
@@ -288,6 +466,14 @@ gtk_bgbox_draw(GtkWidget *widget, cairo_t *cr)
     return FALSE;
 }
 
+/**
+ * gtk_bgbox_bg_changed - FbBg "changed" signal handler.
+ * @bg:     FbBg singleton that emitted the signal.
+ * @widget: GtkBgbox instance connected to this handler.
+ *
+ * Called when the root pixmap changes (wallpaper replaced).  Refreshes the
+ * background slice so the new wallpaper appears in the panel.
+ */
 static void
 gtk_bgbox_bg_changed(FbBg *bg, GtkWidget *widget)
 {
@@ -300,6 +486,25 @@ gtk_bgbox_bg_changed(FbBg *bg, GtkWidget *widget)
     return;
 }
 
+/**
+ * gtk_bgbox_set_background - set or change the background mode and refresh.
+ * @widget:    A GtkBgbox instance.  No-op if not GTK_IS_BGBOX().
+ * @bg_type:   New background mode (BG_NONE/BG_STYLE/BG_ROOT/BG_INHERIT).
+ * @tintcolor: Tint colour 0xRRGGBB (stored and used in BG_ROOT mode).
+ * @alpha:     Tint alpha 0–255 (stored and used in BG_ROOT mode).
+ *
+ * Always destroys priv->pixmap before switching mode (prevents stale slices).
+ *
+ * BG_STYLE: disconnects and unrefs FbBg; GTK CSS takes over.
+ *
+ * BG_ROOT / BG_INHERIT:
+ *   - Acquires FbBg singleton if not already held (fb_bg_get_for_display).
+ *   - Connects the "changed" signal (sid) if not already connected.
+ *   - For BG_ROOT: calls gtk_bgbox_set_bg_root() to fill priv->pixmap.
+ *   - For BG_INHERIT: calls gtk_bgbox_set_bg_inherit() (currently a stub).
+ *
+ * Queues a full redraw (gtk_widget_queue_draw) at the end.
+ */
 void
 gtk_bgbox_set_background(GtkWidget *widget, int bg_type, guint32 tintcolor, gint alpha)
 {
@@ -345,6 +550,18 @@ gtk_bgbox_set_background(GtkWidget *widget, int bg_type, guint32 tintcolor, gint
     return;
 }
 
+/**
+ * gtk_bgbox_set_bg_root - fill priv->pixmap with the root pixmap slice.
+ * @widget: GtkBgbox widget (must be realized for XGetGeometry to succeed).
+ * @priv:   Private state; priv->bg must be a valid FbBg instance.
+ *
+ * Delegates to fb_bg_get_xroot_pix_for_win() which translates the widget's
+ * window position to root coordinates and crops the cached root pixmap image.
+ * The returned surface is (transfer full) and stored in priv->pixmap.
+ *
+ * If no root pixmap is set, priv->pixmap remains NULL; gtk_bgbox_draw()
+ * falls back to CSS rendering in that case.
+ */
 static void
 gtk_bgbox_set_bg_root(GtkWidget *widget, GtkBgboxPrivate *priv)
 {
@@ -355,6 +572,14 @@ gtk_bgbox_set_bg_root(GtkWidget *widget, GtkBgboxPrivate *priv)
     return;
 }
 
+/**
+ * gtk_bgbox_set_bg_inherit - stub for BG_INHERIT mode.
+ * @widget: GtkBgbox widget.
+ * @priv:   Private state (unused).
+ *
+ * Currently a no-op.  Intended to copy the parent widget's background
+ * into priv->pixmap.  See BUG-004 in docs/BUGS_AND_ISSUES.md.
+ */
 static void
 gtk_bgbox_set_bg_inherit(GtkWidget *widget, GtkBgboxPrivate *priv)
 {

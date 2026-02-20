@@ -1,3 +1,14 @@
+## Version: 8.3.30
+* docs: add full Doxygen-style comments to panel/gtkbgbox.h and panel/gtkbgbox.c.
+  Documents GtkBgboxPrivate fields (pixmap ownership, FbBg singleton ref, signal
+  handler ID), the four background modes (BG_NONE/BG_STYLE/BG_ROOT/BG_INHERIT),
+  the manual GDK window creation in realize (required because has_window=TRUE
+  prevents calling parent_class->realize), the intentional omission of
+  parent_class->size_allocate (GtkBin would double-allocate the child harmlessly
+  but wastefully), the three-layer draw sequence (root pixmap slice → tint
+  overlay → child rendering), the memcmp optimisation in size_allocate, and
+  BUG-004 cross-reference on the gtk_bgbox_set_bg_inherit stub.  No logic changes.
+
 ## Version: 8.3.29
 * docs: add full Doxygen-style comments to panel/gtkbar.h and panel/gtkbar.c.
   Documents the grid layout algorithm (rows×cols from dimension and N visible

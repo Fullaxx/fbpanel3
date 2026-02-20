@@ -1,3 +1,62 @@
+/**
+ * @file panel.c
+ * @brief fbpanel core -- startup, event dispatch, autohide, main loop.
+ *
+ * STARTUP SEQUENCE
+ * ----------------
+ * main()
+ *   -> gtk_init(), fb_init() (atoms + icon_theme)
+ *   -> do_argv() (parse command-line flags)
+ *   -> ensure_profile() (create ~/.config/fbpanel/<profile> if absent)
+ *   -> loop {
+ *        p = g_new0(panel, 1)
+ *        p->xc = xconf_new_from_file(profile_file, profile)
+ *        panel_start(p->xc) {
+ *          fbev = fb_ev_new()
+ *          panel_parse_global() -> panel_start_gui()  [GTK hierarchy created]
+ *          panel_parse_plugin() for each "plugin" xconf block
+ *          g_timeout_add(200, panel_show_anyway)      [deferred show]
+ *        }
+ *        [optional: configure() if --configure flag set]
+ *        gtk_main()          <- event loop
+ *        panel_stop(p)       <- teardown
+ *        xconf_del(p->xc, FALSE)
+ *        g_free(p)
+ *      } while (force_quit == 0)
+ *   -> fb_free(); exit(0)
+ *
+ * RESTART (SIGUSR1)
+ * -----------------
+ * sig_usr1 calls gtk_main_quit() with force_quit still 0.
+ * The loop restarts: panel_stop tears everything down and panel_start
+ * re-reads the config and rebuilds the panel (hot-reload).
+ *
+ * SHUTDOWN (SIGUSR2 / destroy event)
+ * -----------------------------------
+ * sig_usr2 / panel_destroy_event set force_quit = 1 before calling
+ * gtk_main_quit().  The loop exits and the process terminates cleanly.
+ *
+ * EWMH EVENT DISPATCH
+ * -------------------
+ * panel_event_filter() is installed as a GdkFilterFunc on the root window.
+ * It receives all PropertyNotify events on the root window and:
+ *   - translates EWMH property changes to FbEv signals (fb_ev_trigger)
+ *   - updates p->curdesk / p->desknum caches
+ *   - calls fb_bg_notify_changed_bg() when _XROOTPMAP_ID changes
+ *   - calls gtk_main_quit() when _NET_DESKTOP_GEOMETRY changes (triggers restart)
+ *
+ * AUTOHIDE STATE MACHINE
+ * ----------------------
+ * Three states driven by mouse position (queried every PERIOD ms):
+ *   ah_state_visible  -> mouse far -> ah_state_waiting
+ *   ah_state_waiting  -> timer expires -> ah_state_hidden
+ *                     -> mouse close -> ah_state_visible
+ *   ah_state_hidden   -> mouse close -> ah_state_visible
+ *
+ * The active state is stored as a function pointer in p->ah_state.
+ *
+ * See also: docs/ARCHITECTURE.md, docs/MEMORY_MODEL.md sec.2.
+ */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -17,45 +76,98 @@
 #include "gtkbgbox.h"
 
 
+/** Project version string (substituted by CMake from PROJECT_VERSION). */
 static gchar version[] = PROJECT_VERSION;
+
+/** Active profile name; defaults to "default"; may be overridden by --profile. */
 static gchar *profile = "default";
+
+/** Full path to the profile config file; built in main() from profile name. */
 static gchar *profile_file;
 
-/* Wrapper functions matching my_box_new signature */
+/* -------------------------------------------------------------------------
+ * GtkBox / GtkSeparator factory wrappers
+ * The panel stores function pointers (my_box_new, my_separator_new) so that
+ * the same code creates horizontal or vertical layouts depending on edge.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * hbox_new - create a horizontal GtkBox (panel->my_box_new for top/bottom panels).
+ * @o:       Ignored (orientation always forced to HORIZONTAL).
+ * @spacing: Pixel gap between children.
+ */
 static GtkWidget *hbox_new(GtkOrientation o, gint spacing) {
     (void)o;
     return gtk_box_new(GTK_ORIENTATION_HORIZONTAL, spacing);
 }
+
+/**
+ * vbox_new - create a vertical GtkBox (panel->my_box_new for left/right panels).
+ * @o:       Ignored (orientation always forced to VERTICAL).
+ * @spacing: Pixel gap between children.
+ */
 static GtkWidget *vbox_new(GtkOrientation o, gint spacing) {
     (void)o;
     return gtk_box_new(GTK_ORIENTATION_VERTICAL, spacing);
 }
-/* Wrapper functions matching my_separator_new signature */
+
+/**
+ * vseparator_new - create a vertical GtkSeparator (used between plugins in hbox).
+ */
 static GtkWidget *vseparator_new(void) {
     return gtk_separator_new(GTK_ORIENTATION_VERTICAL);
 }
+
+/**
+ * hseparator_new - create a horizontal GtkSeparator (used between plugins in vbox).
+ */
 static GtkWidget *hseparator_new(void) {
     return gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
 }
 
-guint mwid; // mouse watcher thread id
-guint hpid; // hide panel thread id
+/** Mouse-watcher timer ID (g_timeout_add every PERIOD ms); removed by ah_stop(). */
+guint mwid;
+/** Hide-delay timer ID (g_timeout_add 2*PERIOD for WAITING->HIDDEN transition). */
+guint hpid;
 
 
+/** FbEv EWMH event singleton; created in panel_start(), unref'd in panel_stop(). */
 FbEv *fbev;
+/** Non-zero when the process should exit after panel_stop (set by SIGUSR2 or destroy event). */
 gint force_quit = 0;
+/** Non-zero when --configure was passed; causes configure() to run before gtk_main(). */
 int config;
+/** Xinerama head from --xineramaHead flag; stored in p->xineramaHead at start of each loop. */
 int xineramaHead = FBPANEL_INVALID_XINERAMA_HEAD;
 
 //#define DEBUGPRN
 #include "dbg.h"
 
-/** verbosity level of dbg and log functions */
+/** Log verbosity level; 0 = silent, higher = more verbose. Controlled by --log. */
 int log_level = LOG_WARN;
 
+/** The active panel instance; alias for 'p' accessible to external modules. */
 static panel *p;
 panel *the_panel;
 
+/**
+ * panel_set_wm_strut - set _NET_WM_STRUT_PARTIAL and _NET_WM_STRUT on topgwin.
+ * @p: Panel instance.
+ *
+ * Computes a 12-element strut array for _NET_WM_STRUT_PARTIAL (and the
+ * first 4 elements for the legacy _NET_WM_STRUT).  The strut reserves screen
+ * space along p->edge so maximised windows do not overlap the panel.
+ *
+ * No-ops if:
+ *   - The panel window is not yet mapped (WMs typically ignore struts for
+ *     unmapped windows, which is how autohide hides itself)
+ *   - p->autohide is set (autohiding panels retract to height_when_hidden,
+ *     so a full strut would be wrong)
+ *
+ * The strut extent is p->aw + p->ymargin (left/right) or p->ah + p->ymargin
+ * (top/bottom), covering the panel's full width/height in the perpendicular
+ * direction (ax to ax+aw or ay to ay+ah).
+ */
 void
 panel_set_wm_strut(panel *p)
 {
@@ -114,6 +226,30 @@ panel_set_wm_strut(panel *p)
     return;
 }
 
+/**
+ * panel_event_filter - GdkFilterFunc for PropertyNotify events on the root window.
+ * @xevent: Raw XEvent from GDK.
+ * @event:  Unused GdkEvent wrapper.
+ * @p:      Panel instance (passed as user_data).
+ *
+ * Installed via gdk_window_add_filter() in panel_start_gui().
+ * Removed via gdk_window_remove_filter() in panel_stop().
+ *
+ * Handles PropertyNotify on the root window:
+ *   _NET_CLIENT_LIST            -> fb_ev_trigger(EV_CLIENT_LIST)
+ *   _NET_CURRENT_DESKTOP        -> update p->curdesk, trigger EV_CURRENT_DESKTOP
+ *   _NET_NUMBER_OF_DESKTOPS     -> update p->desknum, trigger EV_NUMBER_OF_DESKTOPS
+ *   _NET_DESKTOP_NAMES          -> trigger EV_DESKTOP_NAMES
+ *   _NET_ACTIVE_WINDOW          -> trigger EV_ACTIVE_WINDOW
+ *   _NET_CLIENT_LIST_STACKING   -> trigger EV_CLIENT_LIST_STACKING
+ *   _XROOTPMAP_ID               -> notify FbBg of wallpaper change (if transparent)
+ *   _NET_DESKTOP_GEOMETRY       -> call gtk_main_quit() to restart panel (screen resize)
+ *
+ * Non-root PropertyNotify events and all other event types return GDK_FILTER_CONTINUE.
+ * Handled root events return GDK_FILTER_REMOVE.
+ *
+ * Returns: GDK_FILTER_REMOVE for handled events, GDK_FILTER_CONTINUE otherwise.
+ */
 static GdkFilterReturn
 panel_event_filter(GdkXEvent *xevent, GdkEvent *event, panel *p)
 {
@@ -172,6 +308,14 @@ panel_event_filter(GdkXEvent *xevent, GdkEvent *event, panel *p)
  *         panel's handlers for GTK events          *
  ****************************************************/
 
+/**
+ * panel_destroy_event - GtkWidget::destroy-event handler for topgwin.
+ *
+ * Called when the panel window is destroyed by the WM or the system.
+ * Sets force_quit=1 so the main loop exits cleanly after panel_stop().
+ *
+ * Returns: FALSE (allow normal GTK destroy processing to continue).
+ */
 static gint
 panel_destroy_event(GtkWidget * widget, GdkEvent * event, gpointer data)
 {
@@ -180,6 +324,18 @@ panel_destroy_event(GtkWidget * widget, GdkEvent * event, gpointer data)
     return FALSE;
 }
 
+/**
+ * panel_size_alloc - GtkWidget::size-allocate handler for topgwin.
+ * @widget: topgwin (unused).
+ * @a:      New allocation from GTK layout engine.
+ * @p:      Panel instance.
+ *
+ * When widthtype or heighttype is WIDTH_REQUEST / HEIGHT_REQUEST, the panel
+ * tracks its content size.  This callback updates p->width/height from the
+ * actual allocation and re-runs calculate_position() to reposition the window.
+ *
+ * Note: this is the GTK3 replacement for the removed 'size-request' signal.
+ */
 static void
 panel_size_alloc(GtkWidget *widget, GtkAllocation *a, panel *p)
 {
@@ -196,6 +352,17 @@ panel_size_alloc(GtkWidget *widget, GtkAllocation *a, panel *p)
 }
 
 
+/**
+ * make_round_corners - apply a rounded-rectangle shape mask to topgwin.
+ * @p: Panel instance; reads p->aw, p->ah, p->round_corners_radius.
+ *
+ * Creates a CAIRO_FORMAT_A1 surface, paints a filled rounded rectangle with
+ * radius r (clamped to MIN(w,h)/2 if too large; skipped if r < 4), then
+ * converts it to a cairo_region_t and passes it to gtk_widget_shape_combine_region.
+ *
+ * All cairo resources (surface, context, region) are created and destroyed
+ * locally -- no ownership is transferred to the caller.
+ */
 static void
 make_round_corners(panel *p)
 {
@@ -247,9 +414,25 @@ make_round_corners(panel *p)
     return;
 }
 
-/* Called by GDK when the screen layout changes (e.g. xrandr resize).
- * Recalculate panel geometry and move/resize the window immediately so
- * widgets are never allocated with incorrect dimensions. */
+/**
+ * panel_screen_changed - GdkScreen::monitors-changed handler.
+ * @screen: The GdkScreen that changed (unused; geometry read via GDK monitor API).
+ * @p:      Panel instance.
+ *
+ * Called when the screen layout changes (xrandr, monitor hot-plug/unplug).
+ * Recalculates panel geometry, refreshes the minimum-height constraint so
+ * GTK's own monitors-changed handler (which fires before ours) cannot shrink
+ * the window below p->ah, then immediately moves and resizes topgwin.
+ *
+ * Connected in panel_start_gui() as:
+ *   g_signal_connect(gtk_widget_get_screen(p->topgwin), "monitors-changed", ...)
+ * Disconnected in panel_stop() using p->monitors_sid.
+ *
+ * This is the fast-path screen-resize handler for bare-X environments (no WM
+ * or WMs that do not send _NET_DESKTOP_GEOMETRY).  WM environments additionally
+ * trigger a full panel_stop/panel_start cycle via the PropertyNotify handler
+ * when _NET_DESKTOP_GEOMETRY changes.  See docs/ARCHITECTURE.md sec.6.
+ */
 static void
 panel_screen_changed(GdkScreen *screen, panel *p)
 {
@@ -265,6 +448,24 @@ panel_screen_changed(GdkScreen *screen, panel *p)
         panel_set_wm_strut(p);
 }
 
+/**
+ * panel_configure_event - GtkWidget::configure-event handler for topgwin.
+ * @widget: topgwin.
+ * @e:      Configure event with actual geometry.
+ * @p:      Panel instance.
+ *
+ * Tracks the actual window geometry in p->cx/cy/cw/ch.  Because WMs may
+ * adjust the window position (gravity, borders), this handler re-issues
+ * gtk_window_move() if the position does not match p->ax/ay.
+ *
+ * Once the window is at the right place and size:
+ *   - Notifies FbBg of the new position (if transparent)
+ *   - Sets the WM strut (if setstrut)
+ *   - Applies the rounded-corner shape mask (if round_corners)
+ *   - Shows the window (gtk_widget_show)
+ *
+ * Returns: FALSE (do not suppress further event processing).
+ */
 static gboolean
 panel_configure_event(GtkWidget *widget, GdkEventConfigure *e, panel *p)
 {
@@ -340,13 +541,24 @@ panel_configure_event(GtkWidget *widget, GdkEventConfigure *e, panel *p)
  * otherwise it's far
  */
 
+/** Autohide proximity threshold in pixels. Mouse within GAP px = "close". */
 #define GAP 2
+/** Autohide mouse-polling interval in milliseconds. */
 #define PERIOD 300
 
 static gboolean ah_state_visible(panel *p);
 static gboolean ah_state_waiting(panel *p);
 static gboolean ah_state_hidden(panel *p);
 
+/**
+ * panel_mapped - GtkWidget::map-event handler for topgwin.
+ *
+ * Called each time topgwin becomes mapped (visible on screen).  If autohide
+ * is configured, restarts the autohide machinery (ah_stop then ah_start) so
+ * the mouse watcher timer is always active while the panel is mapped.
+ *
+ * Returns: FALSE (do not suppress the map event).
+ */
 static gboolean
 panel_mapped(GtkWidget *widget, GdkEvent *event, panel *p)
 {
@@ -357,6 +569,20 @@ panel_mapped(GtkWidget *widget, GdkEvent *event, panel *p)
     return FALSE;
 }
 
+/**
+ * mouse_watch - g_timeout_add callback; polls mouse position and drives autohide.
+ * @p: Panel instance.
+ *
+ * Called every PERIOD ms.  Reads the absolute pointer position via GDK seat API.
+ * Sets p->ah_far to non-zero if the pointer is outside the panel's sensitive area:
+ *   - In VISIBLE/WAITING states: sensitive area is the full panel extent (p->aw x p->ah).
+ *   - In HIDDEN state: sensitive area shrinks to a GAP-pixel strip at the screen edge
+ *     so the panel does not interfere with adjacent applications.
+ *
+ * Then calls p->ah_state(p) to let the state machine transition if needed.
+ *
+ * Returns: TRUE (keep the timer active).
+ */
 static gboolean
 mouse_watch(panel *p)
 {
@@ -405,6 +631,17 @@ mouse_watch(panel *p)
     return TRUE;
 }
 
+/**
+ * ah_state_visible - autohide VISIBLE state handler.
+ * @p: Panel instance.
+ *
+ * On first entry (p->ah_state != ah_state_visible): shows topgwin and sticks
+ * it to all desktops.
+ * While in this state: if p->ah_far, transitions to WAITING (calls
+ * ah_state_waiting directly).
+ *
+ * Returns: FALSE (unused; function pointer type requires gboolean).
+ */
 static gboolean
 ah_state_visible(panel *p)
 {
@@ -418,6 +655,17 @@ ah_state_visible(panel *p)
     return FALSE;
 }
 
+/**
+ * ah_state_waiting - autohide WAITING state handler.
+ * @p: Panel instance.
+ *
+ * On first entry: starts a 2*PERIOD timer.  If the timer fires, ah_state_hidden
+ * is called directly by g_timeout_add.
+ * While waiting: if mouse returns close (not p->ah_far), cancels the timer and
+ * transitions back to VISIBLE.
+ *
+ * Returns: FALSE (unused; function pointer type requires gboolean).
+ */
 static gboolean
 ah_state_waiting(panel *p)
 {
@@ -432,6 +680,18 @@ ah_state_waiting(panel *p)
     return FALSE;
 }
 
+/**
+ * ah_state_hidden - autohide HIDDEN state handler; also used as timer callback.
+ * @p: Panel instance.
+ *
+ * On first entry (p->ah_state != ah_state_hidden): hides topgwin.
+ * While hidden: if mouse comes close (not p->ah_far), transitions to VISIBLE.
+ *
+ * Also used directly as a g_timeout_add callback from ah_state_waiting;
+ * in that context it is called once when the 2*PERIOD timer expires.
+ *
+ * Returns: FALSE (removes the timer when used as GSourceFunc).
+ */
 static gboolean
 ah_state_hidden(panel *p)
 {
@@ -444,7 +704,12 @@ ah_state_hidden(panel *p)
     return FALSE;
 }
 
-/* starts autohide behaviour */
+/**
+ * ah_start - begin autohide behaviour.
+ * @p: Panel instance with autohide=1.
+ *
+ * Starts the mouse-watcher timer (mwid) and immediately enters VISIBLE state.
+ */
 void
 ah_start(panel *p)
 {
@@ -453,7 +718,13 @@ ah_start(panel *p)
     return;
 }
 
-/* stops autohide */
+/**
+ * ah_stop - cancel all autohide timers.
+ * @p: Panel instance.
+ *
+ * Removes mwid (mouse-watch timer) and hpid (hide-delay timer) if active.
+ * Sets both to 0 after removal.  Safe to call when autohide is not running.
+ */
 void
 ah_stop(panel *p)
 {
@@ -471,6 +742,13 @@ ah_stop(panel *p)
 /****************************************************
  *         panel creation                           *
  ****************************************************/
+
+/**
+ * about - show the GTK About dialog for fbpanel.
+ *
+ * Called from the panel context menu "About" item.  Uses gtk_show_about_dialog
+ * which creates a transient, non-blocking dialog.
+ */
 void
 about()
 {
@@ -489,6 +767,17 @@ about()
     return;
 }
 
+/**
+ * panel_make_menu - create the panel right-click context menu.
+ * @p: Panel instance.
+ *
+ * Creates a GtkMenu with three items:
+ *   "Preferences" -> configure(p->xc)   [using g_signal_connect_swapped]
+ *   separator
+ *   "About"       -> about(p)
+ *
+ * Returns: (transfer full) GtkMenu*; stored in p->menu and destroyed in panel_stop().
+ */
 static GtkWidget *
 panel_make_menu(panel *p)
 {
@@ -518,6 +807,17 @@ panel_make_menu(panel *p)
     return menu;
 }
 
+/**
+ * panel_button_press_event - GtkWidget::button-press-event handler for topgwin.
+ * @widget: topgwin.
+ * @event:  Button event.
+ * @p:      Panel instance.
+ *
+ * Opens the context menu on Ctrl+right-click.  The menu is popped up at the
+ * pointer position using gtk_menu_popup_at_pointer.
+ *
+ * Returns: TRUE (event consumed) on Ctrl+right-click, FALSE otherwise.
+ */
 gboolean
 panel_button_press_event(GtkWidget *widget, GdkEventButton *event, panel *p)
 {
@@ -530,6 +830,20 @@ panel_button_press_event(GtkWidget *widget, GdkEventButton *event, panel *p)
     return FALSE;
 }
 
+/**
+ * panel_scroll_event - GtkWidget::scroll-event handler for topgwin.
+ * @widget: topgwin (unused).
+ * @event:  Scroll event.
+ * @p:      Panel instance.
+ *
+ * Switches the active desktop on mouse wheel scroll:
+ *   UP or LEFT  -> previous desktop (wrapping at 0)
+ *   DOWN or RIGHT -> next desktop (wrapping at desknum-1)
+ *
+ * Sends a _NET_CURRENT_DESKTOP ClientMessage to the root window.
+ *
+ * Returns: TRUE (event consumed).
+ */
 static gboolean
 panel_scroll_event(GtkWidget *widget, GdkEventScroll *event, panel *p)
 {
@@ -551,6 +865,30 @@ panel_scroll_event(GtkWidget *widget, GdkEventScroll *event, panel *p)
 }
 
 
+/**
+ * panel_start_gui - create the full GTK widget hierarchy for the panel.
+ * @p: Panel instance with all config fields already set by panel_parse_global().
+ *
+ * Construction sequence:
+ *   1. Create topgwin (GtkWindow, DOCK hint, no decorations, no focus).
+ *   2. Realize topgwin to get p->topxwin; connect GdkScreen::monitors-changed.
+ *   3. Move window to a temporary position (20,20) to force a configure event.
+ *   4. Calculate final position and set gtk_widget_set_size_request(-1, p->ah)
+ *      as a hard minimum-height floor (v8.3.24 fix).
+ *   5. Create bbox (GtkBgbox "panel-bg"); add to topgwin.
+ *      If transparent: add CSS fallback provider, acquire FbBg, set BG_ROOT.
+ *   6. Create lbox (alignment GtkBox); add to bbox.
+ *   7. Create box (plugin container GtkBox); pack into lbox.
+ *   8. gtk_widget_show_all then hide topgwin (hidden until configure-event confirms position).
+ *   9. Create context menu (p->menu).
+ *  10. Set WM strut if p->setstrut.
+ *  11. XSelectInput(PropertyChangeMask) on root; install panel_event_filter.
+ *
+ * Note: the window is initially hidden (gtk_widget_hide) after show_all.  The
+ * configure-event handler re-shows it once the WM confirms the correct position.
+ * panel_show_anyway() (scheduled with g_timeout_add 200 ms) ensures the window
+ * shows even if configure-event never arrives (e.g. when no WM is running).
+ */
 static void
 panel_start_gui(panel *p)
 {
@@ -664,6 +1002,25 @@ panel_start_gui(panel *p)
     return;
 }
 
+/**
+ * panel_parse_global - parse the "global" xconf block and build the GUI.
+ * @xc: xconf node for the "global" section (child of root).
+ *
+ * Sets all panel config fields to defaults, then overrides them with values
+ * read from xc via XCG macros.  After validation and sanity-clamping, calls
+ * panel_start_gui() to create the widget tree.
+ *
+ * Config keys read: edge, allign, widthtype, heighttype, width, height,
+ * xmargin, ymargin, setdocktype, setpartialstrut, autohide, heightwhenhidden,
+ * setlayer, layer, roundcorners, roundcornersradius, transparent, alpha,
+ * tintcolor, maxelemheight.
+ *
+ * Note: p->heighttype is overridden to HEIGHT_PIXEL unconditionally at line 738,
+ * making the config value of "heighttype" ineffective.  See BUG-014 in
+ * docs/BUGS_AND_ISSUES.md.
+ *
+ * Returns: 1 always (return value is unused by the caller).
+ */
 static int
 panel_parse_global(xconf *xc)
 {
@@ -754,6 +1111,18 @@ panel_parse_global(xconf *xc)
     return 1;
 }
 
+/**
+ * panel_parse_plugin - parse one "plugin" xconf block and load the plugin.
+ * @xc: xconf node for one "plugin" section.
+ *
+ * Reads the "type" key to determine the plugin name, loads it via plugin_load(),
+ * sets plug->panel, expand/padding/border/xc from config, then calls
+ * plugin_start().  On success, appends the plugin_instance to p->plugins.
+ * On failure (load or start), calls plugin_put() and returns without adding.
+ *
+ * Note: "type" is read with xconf_get_str (transfer none) -- the pointer is
+ * into the xconf tree and must not be g_free()'d.
+ */
 static void
 panel_parse_plugin(xconf *xc)
 {
@@ -772,13 +1141,24 @@ panel_parse_plugin(xconf *xc)
     plug->xc = xconf_find(xc, "config", 0);
 
     if (!plugin_start(plug)) {
-        g_message("fbpanel: plugin '%s' failed to start — skipping", type);
+        g_message("fbpanel: plugin '%s' failed to start -- skipping", type);
         plugin_put(plug);
         return;
     }
     p->plugins = g_list_append(p->plugins, plug);
 }
 
+/**
+ * panel_show_anyway - g_timeout_add callback; ensures the panel is shown.
+ * @data: Unused.
+ *
+ * Scheduled with g_timeout_add(200, ...) at the end of panel_start().
+ * This fallback ensures the panel becomes visible even if the configure-event
+ * handler never fires (e.g. when no WM is running and no configure event arrives
+ * to trigger gtk_widget_show via panel_configure_event).
+ *
+ * Returns: FALSE (one-shot; removes itself after firing).
+ */
 static gboolean
 panel_show_anyway(gpointer data)
 {
@@ -787,6 +1167,14 @@ panel_show_anyway(gpointer data)
 }
 
 
+/**
+ * panel_start - initialise fbev, parse global config and all plugins.
+ * @xc: Root xconf node from xconf_new_from_file().
+ *
+ * Creates the FbEv singleton, then calls panel_parse_global (for the "global"
+ * sub-node) and panel_parse_plugin for each "plugin" sub-node.
+ * Schedules panel_show_anyway as a 200 ms fallback.
+ */
 static void
 panel_start(xconf *xc)
 {
@@ -803,6 +1191,14 @@ panel_start(xconf *xc)
     return;
 }
 
+/**
+ * delete_plugin - g_list_foreach callback; stop and unload one plugin.
+ * @data:  plugin_instance* to stop and free.
+ * @udata: Unused.
+ *
+ * Calls plugin_stop() then plugin_put() on the instance.  Used by panel_stop()
+ * to tear down all plugins before destroying the widget tree.
+ */
 static void
 delete_plugin(gpointer data, gpointer udata)
 {
@@ -811,6 +1207,23 @@ delete_plugin(gpointer data, gpointer udata)
     return;
 }
 
+/**
+ * panel_stop - tear down the panel: plugins, widgets, X11 filters, signals.
+ * @p: Panel instance.
+ *
+ * Teardown sequence:
+ *   1. Stop autohide timers (if autohide).
+ *   2. Stop and unload all plugins (delete_plugin on each element).
+ *   3. Free the plugin list.
+ *   4. Deselect PropertyChangeMask on root; remove panel_event_filter.
+ *   5. Disconnect the monitors-changed signal (p->monitors_sid).
+ *   6. Destroy topgwin (recursively destroys bbox, lbox, box, all plugin pwids).
+ *   7. Destroy p->menu explicitly (independent GtkWidget not in tree).
+ *   8. Unref fbev.
+ *   9. Flush and sync the X display.
+ *
+ * After panel_stop(), the caller calls xconf_del(p->xc, FALSE) then g_free(p).
+ */
 static void
 panel_stop(panel *p)
 {
@@ -839,6 +1252,9 @@ panel_stop(panel *p)
     return;
 }
 
+/**
+ * usage - print command-line usage information to stdout and return.
+ */
 void
 usage()
 {
@@ -857,6 +1273,15 @@ usage()
     printf("\nVisit http://fbpanel.sourceforge.net/ for detailed documentation,\n\n");
 }
 
+/**
+ * handle_error - Xlib error handler; logs the error and continues.
+ * @d:  X Display (unused; GDK_DPY used directly for XGetErrorText).
+ * @ev: XErrorEvent with error_code to describe.
+ *
+ * Installed via XSetErrorHandler() in main().  By default Xlib would abort
+ * the process on X errors; this handler logs the error and returns so the
+ * program continues running.
+ */
 void
 handle_error(Display * d, XErrorEvent * ev)
 {
@@ -868,6 +1293,13 @@ handle_error(Display * d, XErrorEvent * ev)
     return;
 }
 
+/**
+ * sig_usr1 - SIGUSR1 handler; triggers a hot-reload of the panel.
+ * @signum: Must be SIGUSR1 (guard check included).
+ *
+ * Calls gtk_main_quit() without setting force_quit, so the main loop
+ * restarts with panel_stop / xconf_del / g_free / panel_start.
+ */
 static void
 sig_usr1(int signum)
 {
@@ -876,6 +1308,13 @@ sig_usr1(int signum)
     gtk_main_quit();
 }
 
+/**
+ * sig_usr2 - SIGUSR2 handler; triggers clean shutdown.
+ * @signum: Must be SIGUSR2 (guard check included).
+ *
+ * Sets force_quit=1 then calls gtk_main_quit().  The main loop condition
+ * (force_quit == 0) will be false, so the process exits after panel_stop.
+ */
 static void
 sig_usr2(int signum)
 {
@@ -885,6 +1324,22 @@ sig_usr2(int signum)
     force_quit = 1;
 }
 
+/**
+ * do_argv - parse command-line arguments into global flags.
+ * @argc: Argument count.
+ * @argv: Argument vector.
+ *
+ * Recognised options:
+ *   -h / --help            -> usage(); exit(0)
+ *   -v / --version         -> print version; exit(0)
+ *   --log N                -> log_level = N
+ *   --configure / -C       -> config = 1 (show prefs dialog on start)
+ *   --profile / -p NAME    -> profile = g_strdup(NAME)
+ *   --xineramaHead / -x N  -> xineramaHead = N
+ *
+ * Unknown options print usage and exit(1).
+ * Missing arguments to --log, --profile, --xineramaHead print an error and exit(1).
+ */
 static void
 do_argv(int argc, char *argv[])
 {
@@ -934,16 +1389,37 @@ do_argv(int argc, char *argv[])
     }
 }
 
+/**
+ * panel_get_profile - return the active profile name.
+ *
+ * Returns: (transfer none) static or g_strdup'd string; do NOT g_free().
+ */
 gchar *panel_get_profile()
 {
     return profile;
 }
 
+/**
+ * panel_get_profile_file - return the full path to the active profile file.
+ *
+ * Returns: (transfer none) string built by g_build_filename() in main();
+ *          freed at process exit via g_free(profile_file).  Do NOT g_free().
+ */
 gchar *panel_get_profile_file()
 {
     return profile_file;
 }
 
+/**
+ * ensure_profile - create the profile config file from a template if missing.
+ * @(implicit) profile_file: Full path to the profile file.
+ * @(implicit) profile:      Profile name used as argument to make_profile.
+ *
+ * If the profile file does not exist, runs LIBEXECDIR/fbpanel/make_profile
+ * via g_spawn_command_line_sync() to create a default config.
+ * If the file still does not exist after the script, logs an error and calls
+ * exit(1).
+ */
 static void
 ensure_profile()
 {
@@ -967,6 +1443,28 @@ ensure_profile()
     exit(1);
 }
 
+/**
+ * main - fbpanel entry point.
+ * @argc: Argument count.
+ * @argv: Argument vector.
+ *
+ * Initialisation:
+ *   1. setlocale / bindtextdomain / textdomain (i18n)
+ *   2. gtk_init() (GTK + GDK + GLib)
+ *   3. XSetLocaleModifiers, XSetErrorHandler
+ *   4. fb_init() (X11 atoms + icon_theme)
+ *   5. do_argv() (parse flags)
+ *   6. Build profile_file path; ensure_profile()
+ *   7. Append IMGPREFIX to icon theme search path
+ *   8. Install SIGUSR1 / SIGUSR2 handlers
+ *
+ * Main loop (restart on SIGUSR1, exit on SIGUSR2 or destroy-event):
+ *   Allocate panel struct (g_new0), parse config, run panel_start(),
+ *   optionally open configure dialog, enter gtk_main(), teardown with
+ *   panel_stop().  Loop while force_quit == 0.
+ *
+ * Shutdown: g_free(profile_file), fb_free(), exit(0).
+ */
 int
 main(int argc, char *argv[])
 {
@@ -1007,4 +1505,3 @@ main(int argc, char *argv[])
     fb_free();
     exit(0);
 }
-

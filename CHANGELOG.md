@@ -1,3 +1,15 @@
+## Version: 8.3.33
+* docs: add full Doxygen-style comments to panel/panel.h and panel/panel.c.
+  Documents the full startup sequence (xconf parse -> panel_start_gui ->
+  plugin loading -> gtk_main), SIGUSR1 hot-reload and SIGUSR2 shutdown flows,
+  EWMH event dispatch via panel_event_filter (PropertyNotify on root window),
+  the three-state autohide state machine (visible/waiting/hidden), the
+  panel_start_gui 11-step construction sequence, panel_parse_global with
+  BUG-014 cross-reference (heighttype forced to HEIGHT_PIXEL at line 738),
+  panel_stop full teardown sequence, and the main() restart loop.
+  Annotates all panel struct fields with ownership and lifetime comments.
+  No logic changes.
+
 ## Version: 8.3.32
 * docs: add full Doxygen-style comments to panel/misc.h and panel/misc.c.
   Documents the global X11 atom table (resolve_atoms), all EWMH/ICCCM property

@@ -88,6 +88,38 @@ previously allocated by thread T0 here:
 
 ---
 
+### FIXED v8.3.24 — "Negative content height" GTK warning during resize
+
+**Symptom:** After a screen resize, dozens of:
+```
+Gtk-WARNING: Negative content height -1 (allocation 9, extents 5x5)
+             while allocating gadget (node button, owner GtkButton)
+```
+
+**Root cause:** Two interacting issues:
+
+1. **Missing monitors-changed handler**: fbpanel only watched `_NET_DESKTOP_GEOMETRY`
+   (a WM-set atom) to detect screen changes.  In bare-X / Xvfb environments
+   without a WM, the panel never repositioned after an xrandr resize.
+
+2. **No minimum height on GtkWindow**: GTK3's internal `GtkWindow::monitors-changed`
+   handler fires **before** ours and calls `gtk_widget_queue_resize`.  During that
+   transient layout pass the window's minimum size is determined by content —
+   GtkBar reports 2 px minimum when there are no taskbar tasks.  The window
+   shrank to ~9 px momentarily, giving every GtkButton an allocation of 9 px,
+   which is less than the 5+5=10 px CSS extents → warning.
+
+**Fix (v8.3.24 — panel/panel.c):**
+- Connect to `GdkScreen::monitors-changed` signal so the panel repositions
+  on any screen geometry change, not just WM-signalled ones.
+- Call `gtk_widget_set_size_request(topgwin, -1, p->ah)` to set a hard
+  minimum height that GTK cannot override during queue_resize.
+
+**Verified clean:** ASAN build, 4-resolution resize cycle + 35 s
+`rebuild_menu` timeout → 0 GTK warnings, 0 ASAN errors.
+
+---
+
 ## xconf str vs strdup: ownership rule
 
 | Macro                        | Ownership      | Safe to g_free? |

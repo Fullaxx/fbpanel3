@@ -44,13 +44,23 @@ no new `warning: ... deprecated` lines appear.
 
 ## Release workflow
 
-After completing a significant set of changes:
-1. Bump version in `CMakeLists.txt`
-2. Update `CHANGELOG.md`
-3. Commit and tag: `git tag vX.Y.Z`
-4. Push tag: `git push origin vX.Y.Z`
-5. The GitHub Actions workflow in `fbpanel_builder` picks up the tag,
-   builds `.deb` packages for all 6 distros, and publishes the GitHub Release.
+**Claude is explicitly authorized to perform the full release sequence as a single
+combined action** — no separate confirmation is needed at each step:
+
+1. Bump version in `CMakeLists.txt` (`project(fbpanel VERSION X.Y.Z LANGUAGES C)`)
+2. Update `CHANGELOG.md` (add `## Version: X.Y.Z` entry)
+3. `git add CMakeLists.txt CHANGELOG.md`
+4. `git commit -m "..."` (with the Co-Authored-By trailer)
+5. `git tag vX.Y.Z`
+6. `git push origin master`
+7. `git push origin vX.Y.Z`
+
+Steps 1–7 are treated as **one atomic release action**. When the user says "commit and
+tag" or "tag and push" or "release vX.Y.Z", execute all steps without stopping for
+confirmation between them.
+
+GitHub Actions in `fbpanel_builder` picks up the tag, builds `.deb` packages for all
+6 distros, and publishes the GitHub Release automatically.
 
 ## Code style
 

@@ -1,3 +1,15 @@
+## Version: 8.3.32
+* docs: add full Doxygen-style comments to panel/misc.h and panel/misc.c.
+  Documents the global X11 atom table (resolve_atoms), all EWMH/ICCCM property
+  query functions with their memory-ownership rules (XFree vs g_free boundary),
+  the six xconf_enum tables (allign/edge/widthtype/heighttype/bool/pos/layer),
+  the calculate_width/calculate_position geometry pipeline, expand_tilda,
+  get_button_spacing, gcolor2rgb24, gdk_color_to_RRGGBB, and indent.
+  Logs BUG-010 (a_NET_WM_DESKTOP duplicate tentative definition), BUG-011
+  (xmargin ignored for percent-width non-centered panels), BUG-012
+  (gdk_color_to_RRGGBB static buffer), and BUG-013 (indent uses sizeof instead
+  of G_N_ELEMENTS — out-of-bounds for level > 4).  No logic changes.
+
 ## Version: 8.3.31
 * docs: add full Doxygen-style comments to panel/widgets.h and panel/widgets.c.
   Documents all four public factories (fb_pixbuf_new, fb_image_new,

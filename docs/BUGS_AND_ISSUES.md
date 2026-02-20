@@ -300,3 +300,94 @@ Call `fb_button_new(..., "My Label")` and observe that no label appears.
 Either implement label support (add a GtkLabel sibling to the GtkImage inside
 the GtkBgbox, possibly using a GtkBox to stack them), or remove the parameter
 from the API and update all callers.
+
+---
+
+### BUG-010 — `a_NET_WM_DESKTOP` declared twice in misc.c
+
+**File**: `panel/misc.c:45` and `panel/misc.c:63`
+**Severity**: cosmetic
+**Status**: open
+
+**Description**:
+`a_NET_WM_DESKTOP` appears as two separate tentative definitions at file scope.
+In C99 multiple tentative definitions of the same name refer to the same storage
+and are silently merged by the linker — no crash or incorrect behaviour results.
+However the duplication is confusing and masks the fact that `a_NET_CLOSE_WINDOW`
+is declared in the global section but never given an `XInternAtom` call in
+`resolve_atoms()` (it is interned elsewhere in panel.c).
+
+**Suspected fix**: Remove the duplicate `Atom a_NET_WM_DESKTOP;` declaration.
+
+---
+
+### BUG-011 — `xmargin` silently ignored for percent-width non-centered panels
+
+**File**: `panel/misc.c:calculate_width`
+**Severity**: minor (surprising behaviour)
+**Status**: open
+
+**Description**:
+In `calculate_width`, when `wtype == WIDTH_PERCENT` and `allign != ALLIGN_CENTER`,
+the xmargin-adjustment line is commented out and replaced with a bare `;`:
+```c
+if (wtype == WIDTH_PERCENT)
+    //*panw = MAX(scrw - xmargin, *panw);
+    ;
+```
+This means xmargin has no effect on the panel width for percent-width left/right-
+aligned panels.  The xmargin value is still used to compute the panel's X position
+(further down in the function), so the panel is shifted but not shrunk to avoid
+overlapping its own margin.
+
+**Suspected fix**: Determine the intended behaviour (should percent panels honour
+xmargin for width clamping?) and either restore the commented line or document
+why the no-op is intentional.
+
+---
+
+### BUG-012 — `gdk_color_to_RRGGBB` returns a static buffer
+
+**File**: `panel/misc.c:gdk_color_to_RRGGBB`
+**Severity**: cosmetic (not thread-safe; safe in single-threaded use)
+**Status**: open
+
+**Description**:
+`gdk_color_to_RRGGBB` writes into a `static gchar str[10]` and returns a pointer
+to it.  The return value is invalidated by the next call to this function.
+In a multi-threaded context this would be a data race; in fbpanel's single-threaded
+GTK main loop it is safe.  However callers that store the pointer across GTK
+iterations may see stale data.
+
+**Suspected fix**: Return a `g_strdup_printf`-allocated string (transfer full) and
+update all callers to `g_free()` the result, or document the static-buffer
+semantics clearly at each call site.
+
+---
+
+### BUG-013 — `indent()` uses `sizeof(space)` instead of `G_N_ELEMENTS(space)`
+
+**File**: `panel/misc.c:indent`
+**Severity**: minor (potential out-of-bounds array access)
+**Status**: open
+
+**Description**:
+```c
+static gchar *space[] = { "", "    ", "        ", "            ", "                " };
+if (level > sizeof(space))
+    level = sizeof(space);
+return space[level];
+```
+`sizeof(space)` is the byte size of the pointer array: 5 × 8 = 40 on 64-bit.
+The array has only 5 elements (indices 0–4).  Any `level` in the range 5–40
+bypasses the clamp and `space[level]` reads beyond the array — undefined behaviour.
+
+**Reproduction**:
+Call `indent(5)` on a 64-bit build.
+
+**Suspected fix**:
+```c
+if (level >= G_N_ELEMENTS(space))
+    level = G_N_ELEMENTS(space) - 1;
+return space[level];
+```

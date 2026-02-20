@@ -1,3 +1,38 @@
+/**
+ * @file misc.c
+ * @brief fbpanel miscellaneous helpers — X11 atoms, EWMH queries, geometry (implementation).
+ *
+ * This file has three main responsibilities:
+ *
+ * 1. GLOBAL ATOM TABLE
+ *    Defines and interns all X11 atoms used by the panel and its plugins.
+ *    resolve_atoms() calls XInternAtom for each atom once at startup (fb_init).
+ *    Atoms are valid for the lifetime of the X server connection and do not
+ *    need to be freed.
+ *
+ *    Note: a_NET_WM_DESKTOP is declared twice (see BUG-010).
+ *
+ * 2. X11 PROPERTY HELPERS
+ *    All property queries use XGetWindowProperty.  The Xlib-allocated buffer
+ *    returned by XGetWindowProperty is always XFree()'d internally; callers
+ *    receive either:
+ *      - A GLib-heap copy (g_strndup / g_strdup / g_new0) -> caller g_free()s
+ *      - A raw Xlib pointer (get_xaproperty only) -> caller XFree()s
+ *
+ * 3. PANEL GEOMETRY
+ *    calculate_position() and its helper calculate_width() convert the panel
+ *    config (edge, allign, widthtype, xmargin, ymargin) into screen pixel
+ *    coordinates using the GDK monitor API.
+ *
+ * ENUM TABLES
+ * -----------
+ * allign_enum, edge_enum, widthtype_enum, heighttype_enum, bool_enum,
+ * pos_enum, layer_enum are defined here and used by panel.c and plugins
+ * to map config file strings to integer constants via str2num/num2str.
+ *
+ * See also: docs/LIBRARY_USAGE.md sec.2 (Xlib/GDK boundary),
+ *           docs/MEMORY_MODEL.md sec.5 (XFree vs g_free rule).
+ */
 
 
 #include <X11/Xatom.h>
@@ -19,10 +54,18 @@
 //#define DEBUGPRN
 #include "dbg.h"
 
+/** Cached default GtkIconTheme; set in fb_init(); NOT ref'd (borrowed singleton). */
 GtkIconTheme *icon_theme;
 
-/* X11 data types */
+/* -------------------------------------------------------------------------
+ * Global X11 Atom cache
+ * All atoms are interned once by resolve_atoms() and remain valid for the
+ * lifetime of the X server connection.
+ * ------------------------------------------------------------------------- */
+
+/** UTF8_STRING — ICCCM extended string encoding type. */
 Atom a_UTF8_STRING;
+/** _XROOTPMAP_ID — root window property set by wallpaper setters (e.g. feh, nitrogen). */
 Atom a_XROOTPMAP_ID;
 
 /* old WM spec */
@@ -42,7 +85,7 @@ Atom a_NET_DESKTOP_GEOMETRY;
 Atom a_NET_ACTIVE_WINDOW;
 Atom a_NET_CLOSE_WINDOW;
 Atom a_NET_SUPPORTED;
-Atom a_NET_WM_DESKTOP;
+Atom a_NET_WM_DESKTOP;  /* NOTE: declared twice — see BUG-010 */
 Atom a_NET_WM_STATE;
 Atom a_NET_WM_STATE_SKIP_TASKBAR;
 Atom a_NET_WM_STATE_SKIP_PAGER;
@@ -60,7 +103,8 @@ Atom a_NET_WM_WINDOW_TYPE_UTILITY;
 Atom a_NET_WM_WINDOW_TYPE_SPLASH;
 Atom a_NET_WM_WINDOW_TYPE_DIALOG;
 Atom a_NET_WM_WINDOW_TYPE_NORMAL;
-Atom a_NET_WM_DESKTOP;
+Atom a_NET_WM_DESKTOP;  /* BUG-010: duplicate tentative definition — harmless in C99
+                         * (both refer to the same storage) but confusing. */
 Atom a_NET_WM_NAME;
 Atom a_NET_WM_VISIBLE_NAME;
 Atom a_NET_WM_STRUT;
@@ -68,12 +112,21 @@ Atom a_NET_WM_STRUT_PARTIAL;
 Atom a_NET_WM_ICON;
 Atom a_KDE_NET_WM_SYSTEM_TRAY_WINDOW_FOR;
 
+/* -------------------------------------------------------------------------
+ * xconf_enum tables
+ * Used by str2num/num2str for config file parsing.
+ * Each table is terminated by a sentinel entry with str == NULL.
+ * ------------------------------------------------------------------------- */
+
+/** Alignment values for the panel along its edge (left / right / center). */
 xconf_enum allign_enum[] = {
     { .num = ALLIGN_LEFT, .str = c_("left") },
     { .num = ALLIGN_RIGHT, .str = c_("right") },
     { .num = ALLIGN_CENTER, .str = c_("center")},
     { .num = 0, .str = NULL },
 };
+
+/** Edge values for panel placement (left / right / top / bottom). */
 xconf_enum edge_enum[] = {
     { .num = EDGE_LEFT, .str = c_("left") },
     { .num = EDGE_RIGHT, .str = c_("right") },
@@ -81,27 +134,40 @@ xconf_enum edge_enum[] = {
     { .num = EDGE_BOTTOM, .str = c_("bottom") },
     { .num = 0, .str = NULL },
 };
+
+/**
+ * Width type: request (shrink to content), pixel (fixed px), percent (% of screen).
+ * The desc field is used in the preferences dialog combo box.
+ */
 xconf_enum widthtype_enum[] = {
     { .num = WIDTH_REQUEST, .str = "request" , .desc = c_("dynamic") },
     { .num = WIDTH_PIXEL, .str = "pixel" , .desc = c_("pixels") },
     { .num = WIDTH_PERCENT, .str = "percent", .desc = c_("% of screen") },
     { .num = 0, .str = NULL },
 };
+
+/** Height type: currently only "pixel" is supported. */
 xconf_enum heighttype_enum[] = {
     { .num = HEIGHT_PIXEL, .str = c_("pixel") },
     { .num = 0, .str = NULL },
 };
+
+/** Boolean: "false" → 0, "true" → 1. */
 xconf_enum bool_enum[] = {
     { .num = 0, .str = "false" },
     { .num = 1, .str = "true" },
     { .num = 0, .str = NULL },
 };
+
+/** Plugin position within the panel box: none / start / end. */
 xconf_enum pos_enum[] = {
     { .num = POS_NONE, .str = "none" },
     { .num = POS_START, .str = "start" },
     { .num = POS_END,  .str = "end" },
     { .num = 0, .str = NULL},
 };
+
+/** Window layer preference: above / below (normal is the default). */
 xconf_enum layer_enum[] = {
     { .num = LAYER_ABOVE, .str = c_("above") },
     { .num = LAYER_BELOW, .str = c_("below") },
@@ -109,6 +175,14 @@ xconf_enum layer_enum[] = {
 };
 
 
+/**
+ * str2num - look up a string in an xconf_enum table and return its integer value.
+ * @p:      NULL-sentinel xconf_enum array.
+ * @str:    String to look up (case-insensitive).
+ * @defval: Value to return if not found.
+ *
+ * Returns: Matching num, or @defval if the string is absent from the table.
+ */
 int
 str2num(xconf_enum *p, gchar *str, int defval)
 {
@@ -119,6 +193,15 @@ str2num(xconf_enum *p, gchar *str, int defval)
     return defval;
 }
 
+/**
+ * num2str - look up an integer in an xconf_enum table and return its string.
+ * @p:      NULL-sentinel xconf_enum array.
+ * @num:    Integer to look up.
+ * @defval: String to return if not found.
+ *
+ * Returns: (transfer none) pointer into the enum table, or @defval.
+ *          Do NOT g_free() the result.
+ */
 gchar *
 num2str(xconf_enum *p, int num, gchar *defval)
 {
@@ -130,6 +213,20 @@ num2str(xconf_enum *p, int num, gchar *defval)
 }
 
 
+/**
+ * resolve_atoms - intern all X11 atoms used by fbpanel.
+ *
+ * Called once from fb_init().  XInternAtom with create=False returns None if
+ * the atom does not yet exist on the server; with create=True (False here means
+ * "don't create" is FALSE, i.e. DO create).  Wait — actually False passed to
+ * XInternAtom as only_if_exists means "create if not found", so all atoms are
+ * guaranteed to be interned.
+ *
+ * Note: _NET_CLOSE_WINDOW and several other atoms are interned in resolve_atoms
+ * via the global declarations but the a_NET_CLOSE_WINDOW variable is set in
+ * panel.c where Xclimsg is called.  The atom table here covers everything
+ * needed by misc.c callers; panel.c may intern additional atoms separately.
+ */
 void resolve_atoms()
 {
     Display *dpy;
@@ -182,18 +279,41 @@ void resolve_atoms()
 }
 
 
+/**
+ * fb_init - initialise X11 atoms and the global icon theme cache.
+ *
+ * Must be called once after gtk_init() and before any X11 or icon operations.
+ * Sets the global icon_theme to gtk_icon_theme_get_default() (borrowed ref —
+ * do NOT g_object_unref; see fb_free).
+ */
 void fb_init()
 {
     resolve_atoms();
     icon_theme = gtk_icon_theme_get_default();
 }
 
+/**
+ * fb_free - no-op cleanup for fbpanel globals.
+ *
+ * icon_theme is a borrowed reference from gtk_icon_theme_get_default() and
+ * must NOT be g_object_unref()'d.  Atoms are server-side and need no cleanup.
+ */
 void fb_free()
 {
     // MUST NOT be ref'd or unref'd
     // g_object_unref(icon_theme);
 }
 
+/**
+ * Xclimsg - send a 32-bit XClientMessage to the root window.
+ * @win:  Window the message concerns (appears in xev.window).
+ * @type: Message type Atom (e.g. a_NET_ACTIVE_WINDOW).
+ * @l0–l4: Data words; fill unused slots with 0.
+ *
+ * Sends to the root window (GDK_ROOT_WINDOW()) with
+ * SubstructureNotifyMask | SubstructureRedirectMask so the WM intercepts it.
+ * Used for EWMH client-to-WM requests (activate, close, change desktop, etc.).
+ */
 void
 Xclimsg(Window win, long type, long l0, long l1, long l2, long l3, long l4)
 {
@@ -215,6 +335,15 @@ Xclimsg(Window win, long type, long l0, long l1, long l2, long l3, long l4)
           (XEvent *) & xev);
 }
 
+/**
+ * Xclimsgwm - send a 32-bit XClientMessage directly to a window.
+ * @win:  Target window (receives the event; used for WM_PROTOCOLS messages).
+ * @type: Message type Atom (e.g. a_WM_PROTOCOLS).
+ * @arg:  First data word (e.g. a_WM_DELETE_WINDOW).
+ *
+ * Uses GDK_CURRENT_TIME as the timestamp in data.l[1] (ICCCM requirement).
+ * Sent with event mask 0L (not via the root window redirect path).
+ */
 void
 Xclimsgwm(Window win, Atom type, Atom arg)
 {
@@ -230,6 +359,16 @@ Xclimsgwm(Window win, Atom type, Atom arg)
 }
 
 
+/**
+ * get_utf8_property - read a UTF-8 string window property.
+ * @win:  Window to query.
+ * @atom: Property atom.
+ *
+ * Reads with type=UTF8_STRING, format=8.  The Xlib buffer is XFree()'d
+ * after g_strndup() copies it to the GLib heap.
+ *
+ * Returns: (transfer full) gchar*; caller g_free()s.  NULL on failure.
+ */
 void *
 get_utf8_property(Window win, Atom atom)
 {
@@ -258,6 +397,22 @@ get_utf8_property(Window win, Atom atom)
 
 }
 
+/**
+ * get_utf8_property_list - read a NUL-separated UTF-8 string list property.
+ * @win:   Window to query.
+ * @atom:  Property atom (e.g. a_NET_DESKTOP_NAMES).
+ * @count: Output; number of strings in the returned array.
+ *
+ * Reads the entire property value as a flat buffer of NUL-separated strings.
+ * Each substring is g_strdup()'d into a newly allocated char** array.
+ * Handles the edge case where the last string is not NUL-terminated by
+ * memmove()-shifting it one byte back and adding a NUL.
+ *
+ * The Xlib buffer is XFree()'d internally.  The returned char** is allocated
+ * with g_new0 and the strings with g_strdup — caller must g_strfreev().
+ *
+ * Returns: (transfer full) char**; NULL on failure.  *count is 0 on failure.
+ */
 char **
 get_utf8_property_list(Window win, Atom atom, int *count)
 {
@@ -288,6 +443,8 @@ get_utf8_property_list(Window win, Atom atom, int *count)
             retval[i] = g_strdup(s);
         }
         if (val[nitems-1]) {
+            /* Last string not NUL-terminated: shift it one byte back into the
+             * NUL that terminated the previous string, then NUL-terminate. */
             result = nitems - (s - val);
             DBG("val does not ends by 0, moving last %d bytes\n", result);
             memmove(s - 1, s, result);
@@ -303,6 +460,19 @@ get_utf8_property_list(Window win, Atom atom, int *count)
 
 }
 
+/**
+ * get_xaproperty - read any X11 window property as a raw Xlib-heap buffer.
+ * @win:    Window to query.
+ * @prop:   Property atom.
+ * @type:   Expected type atom (e.g. XA_CARDINAL, XA_ATOM, XA_WINDOW).
+ * @nitems: If non-NULL, set to the item count on success.
+ *
+ * Reads up to 0x7FFFFFFF items.  Unlike get_utf8_property, the return value
+ * is NOT copied to the GLib heap — it points directly into X11 memory.
+ *
+ * Returns: (transfer full) void*; caller must XFree() the result.
+ *          NULL if the property is absent or XGetWindowProperty fails.
+ */
 void *
 get_xaproperty (Window win, Atom prop, Atom type, int *nitems)
 {
@@ -325,6 +495,17 @@ get_xaproperty (Window win, Atom prop, Atom type, int *nitems)
     return prop_data;
 }
 
+/**
+ * text_property_to_utf8 - convert an XTextProperty to a UTF-8 string.
+ * @prop: XTextProperty to convert (may be Latin-1, Compound Text, or UTF-8).
+ *
+ * Delegates to gdk_text_property_to_utf8_list_for_display().  Takes
+ * ownership of list[0] (the first converted string) and frees the rest of
+ * the list with g_strfreev() after replacing list[0] with an empty string.
+ *
+ * Returns: (transfer full) gchar* UTF-8 string; caller must g_free().
+ *          NULL if conversion produces zero strings.
+ */
 static char*
 text_property_to_utf8 (const XTextProperty *prop)
 {
@@ -352,6 +533,17 @@ text_property_to_utf8 (const XTextProperty *prop)
   return retval;
 }
 
+/**
+ * get_textproperty - read an ICCCM text property and return it as UTF-8.
+ * @win:  Window to query.
+ * @atom: Property atom (e.g. a_WM_NAME, a_WM_CLASS).
+ *
+ * Reads via XGetTextProperty (ICCCM), converts via text_property_to_utf8
+ * (handles all ICCCM string encodings), XFree()s text_prop.value internally.
+ *
+ * Returns: (transfer full) gchar* UTF-8 string; caller g_free()s.
+ *          NULL if the property is absent or conversion fails.
+ */
 char *
 get_textproperty(Window win, Atom atom)
 {
@@ -374,6 +566,14 @@ get_textproperty(Window win, Atom atom)
 }
 
 
+/**
+ * get_net_number_of_desktops - read _NET_NUMBER_OF_DESKTOPS from the root window.
+ *
+ * Queries the root window's _NET_NUMBER_OF_DESKTOPS XA_CARDINAL property.
+ * XFree()s the Xlib buffer internally.
+ *
+ * Returns: Number of virtual desktops, or 0 if the property is absent.
+ */
 guint
 get_net_number_of_desktops()
 {
@@ -391,6 +591,11 @@ get_net_number_of_desktops()
 }
 
 
+/**
+ * get_net_current_desktop - read _NET_CURRENT_DESKTOP from the root window.
+ *
+ * Returns: Active desktop index (0-based), or 0 if absent.
+ */
 guint
 get_net_current_desktop ()
 {
@@ -406,6 +611,14 @@ get_net_current_desktop ()
     return desk;
 }
 
+/**
+ * get_net_wm_desktop - read _NET_WM_DESKTOP for a client window.
+ * @win: Client window.
+ *
+ * Returns: Desktop index, or 0 if the property is absent.
+ *          0xFFFFFFFF means "all desktops" (sticky) per EWMH spec but is
+ *          not special-cased here — callers must check that value themselves.
+ */
 guint
 get_net_wm_desktop(Window win)
 {
@@ -421,6 +634,20 @@ get_net_wm_desktop(Window win)
     return desk;
 }
 
+/**
+ * get_net_wm_state - read _NET_WM_STATE atoms for a client window.
+ * @win: Client window.
+ * @nws: Output; zeroed (bzero) then filled with matching boolean flags.
+ *
+ * Reads the _NET_WM_STATE XA_ATOM list.  Recognised atoms:
+ *   _NET_WM_STATE_SKIP_PAGER    → nws->skip_pager
+ *   _NET_WM_STATE_SKIP_TASKBAR  → nws->skip_taskbar
+ *   _NET_WM_STATE_STICKY        → nws->sticky
+ *   _NET_WM_STATE_HIDDEN        → nws->hidden
+ *   _NET_WM_STATE_SHADED        → nws->shaded
+ *
+ * Unrecognised atoms are silently ignored.  XFree()s the Xlib buffer.
+ */
 void
 get_net_wm_state(Window win, net_wm_state *nws)
 {
@@ -461,6 +688,23 @@ get_net_wm_state(Window win, net_wm_state *nws)
 
 
 
+/**
+ * get_net_wm_window_type - read _NET_WM_WINDOW_TYPE atoms for a client window.
+ * @win:   Client window.
+ * @nwwt:  Output; zeroed then filled with boolean flags.
+ *
+ * Reads the _NET_WM_WINDOW_TYPE XA_ATOM list.  Recognised atoms:
+ *   _NET_WM_WINDOW_TYPE_DESKTOP → nwwt->desktop
+ *   _NET_WM_WINDOW_TYPE_DOCK    → nwwt->dock
+ *   _NET_WM_WINDOW_TYPE_TOOLBAR → nwwt->toolbar
+ *   _NET_WM_WINDOW_TYPE_MENU    → nwwt->menu
+ *   _NET_WM_WINDOW_TYPE_UTILITY → nwwt->utility
+ *   _NET_WM_WINDOW_TYPE_SPLASH  → nwwt->splash
+ *   _NET_WM_WINDOW_TYPE_DIALOG  → nwwt->dialog
+ *   _NET_WM_WINDOW_TYPE_NORMAL  → nwwt->normal
+ *
+ * XFree()s the Xlib buffer.
+ */
 void
 get_net_wm_window_type(Window win, net_wm_window_type *nwwt)
 {
@@ -510,6 +754,20 @@ get_net_wm_window_type(Window win, net_wm_window_type *nwwt)
 
 
 
+/**
+ * calculate_width - compute the panel's position along one axis.
+ * @scrw:    Screen dimension in pixels along the panel's edge (width or height).
+ * @wtype:   WIDTH_PERCENT, WIDTH_PIXEL, or WIDTH_REQUEST.
+ * @allign:  ALLIGN_LEFT, ALLIGN_RIGHT, or ALLIGN_CENTER.
+ * @xmargin: Margin in pixels from the alignment edge.
+ * @panw:    In/out: panel extent in pixels.  For WIDTH_PERCENT, converted from
+ *           percentage to pixels.  Clamped to [0, scrw].
+ * @x:       In/out: panel origin offset; adjusted based on @allign and @xmargin.
+ *
+ * Note: for WIDTH_PERCENT with allign != ALLIGN_CENTER, xmargin is silently
+ * ignored (the clamping line is commented out).  This may be unintentional.
+ * See BUG-011 in docs/BUGS_AND_ISSUES.md.
+ */
 static void
 calculate_width(int scrw, int wtype, int allign, int xmargin,
       int *panw, int *x)
@@ -553,6 +811,28 @@ calculate_width(int scrw, int wtype, int allign, int xmargin,
 }
 
 
+/**
+ * calculate_position - compute the panel's pixel geometry from config and monitor.
+ * @np: Panel; reads xineramaHead, edge, widthtype, allign, xmargin, ymargin,
+ *      width, height; writes ax, ay, aw, ah, screenRect.
+ *
+ * Monitor selection:
+ *   If np->xineramaHead is valid (not FBPANEL_INVALID_XINERAMA_HEAD) and within
+ *   the current monitor count, uses that monitor's geometry.  Otherwise falls
+ *   back to the primary monitor (gdk_display_get_primary_monitor).
+ *
+ * Geometry calculation:
+ *   Top/bottom edge: calculate_width applies to the horizontal axis.
+ *     np->aw = panel width; np->ah = panel height (clamped to
+ *     [PANEL_HEIGHT_MIN, PANEL_HEIGHT_MAX]).
+ *     np->ax = computed X; np->ay = ymargin (top) or ssheight-ah-ymargin (bottom).
+ *   Left/right edge: calculate_width applies to the vertical axis (roles swapped).
+ *     np->ah = panel height; np->aw = panel width (thickness).
+ *     np->ay = computed Y; np->ax = ymargin (left) or sswidth-aw-ymargin (right).
+ *
+ *   np->aw and np->ah are clamped to >= 1 after all calculations to prevent
+ *   zero-size windows.
+ */
 void
 calculate_position(panel *np)
 {
@@ -638,6 +918,15 @@ calculate_position(panel *np)
 
 
 
+/**
+ * expand_tilda - expand a leading '~' in a file path to $HOME.
+ * @file: Input path; may be NULL.
+ *
+ * Only bare '~' (current user) is expanded.  "~user" expansion is not
+ * supported.  Uses getenv("HOME") — may return NULL on minimal systems.
+ *
+ * Returns: (transfer full) gchar*; caller must g_free().  NULL if @file is NULL.
+ */
 gchar *
 expand_tilda(gchar *file)
 {
@@ -650,6 +939,18 @@ expand_tilda(gchar *file)
 }
 
 
+/**
+ * get_button_spacing - probe a GtkButton's minimum preferred size.
+ * @req:    Output; set to the button's minimum preferred size (includes
+ *          internal padding and border imposed by the current GTK theme).
+ * @parent: Optional container to temporarily parent the button (may be NULL).
+ *          Parenting lets the button inherit CSS context for accurate sizing.
+ * @name:   Widget name applied via gtk_widget_set_name(); used for CSS matching.
+ *
+ * Creates a temporary GtkButton, measures it, then destroys it.  The caller
+ * uses the measured size to account for per-button overhead when computing
+ * content area dimensions.
+ */
 void
 get_button_spacing(GtkRequisition *req, GtkContainer *parent, gchar *name)
 {
@@ -674,6 +975,16 @@ get_button_spacing(GtkRequisition *req, GtkContainer *parent, gchar *name)
 }
 
 
+/**
+ * gcolor2rgb24 - convert a GdkRGBA colour to a packed 0xRRGGBB integer.
+ * @color: Input; red/green/blue in [0.0, 1.0]; alpha is discarded.
+ *
+ * Each channel is multiplied by 255 and truncated to 8 bits.
+ * Used by plugins and GtkBgbox to convert GTK colour values to the
+ * 0xRRGGBB format expected by fb_pixbuf_make_back_image.
+ *
+ * Returns: guint32 packed as 0x00RRGGBB.
+ */
 guint32
 gcolor2rgb24(GdkRGBA *color)
 {
@@ -688,6 +999,16 @@ gcolor2rgb24(GdkRGBA *color)
     return i;
 }
 
+/**
+ * gdk_color_to_RRGGBB - format a GdkRGBA as a "#RRGGBB" CSS hex string.
+ * @color: Input colour.
+ *
+ * Writes into a static 10-byte buffer — not re-entrant and invalidated by
+ * the next call.  Safe in practice because fbpanel is single-threaded.
+ * See BUG-012 in docs/BUGS_AND_ISSUES.md.
+ *
+ * Returns: (transfer none) pointer to static buffer; do NOT g_free().
+ */
 gchar *
 gdk_color_to_RRGGBB(GdkRGBA *color)
 {
@@ -697,6 +1018,19 @@ gdk_color_to_RRGGBB(GdkRGBA *color)
     return str;
 }
 
+/**
+ * indent - return a static indentation string for the given depth.
+ * @level: Indentation level (intended range 0–4).
+ *
+ * Returns one of five pre-allocated static strings (0, 4, 8, 12, 16 spaces).
+ *
+ * WARNING: The bounds check `level > sizeof(space)` is incorrect — it uses
+ * the byte size of the pointer array (40 on 64-bit) rather than the element
+ * count (5).  Levels 5–40 bypass the clamp and access out-of-bounds memory.
+ * See BUG-013 in docs/BUGS_AND_ISSUES.md.
+ *
+ * Returns: (transfer none) static string; do NOT g_free().
+ */
 gchar *
 indent(int level)
 {
@@ -712,4 +1046,3 @@ indent(int level)
         level = sizeof(space);
     return space[level];
 }
-

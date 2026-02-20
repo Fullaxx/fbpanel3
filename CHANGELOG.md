@@ -1,3 +1,11 @@
+## Version: 8.3.27
+* docs: add full Doxygen-style comments to panel/ev.h and panel/ev.c.
+  Documents the EWMH event bus signal flow, the lazy invalidation pattern
+  for all six cached properties, X11 vs GLib heap ownership for the cached
+  arrays (XFree vs g_strfreev), the legacy unused fields in _FbEv, and
+  cross-references to BUG-001 (desktop_names finalize leak) and BUG-003
+  (three unimplemented accessor bodies). No logic changes.
+
 ## Version: 8.3.26
 * docs: add full Doxygen-style comments to panel/bg.h and panel/bg.c.
   Documents the FbBg singleton pattern, the internal root-pixmap cache

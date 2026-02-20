@@ -1,3 +1,14 @@
+## Version: 8.3.34
+* docs: add full Doxygen-style comments to panel/gconf.h, gconf.c, gconf_panel.c,
+  gconf_plugins.c, run.h, and run.c.  Documents the gconf_block row-layout helper
+  (struct fields, ownership, lifecycle, signal wiring), all four edit-widget
+  factories (int/enum/boolean/color) with xconf ownership semantics, the
+  preferences dialog lifecycle (xconf snapshot pattern, two-copy change detection,
+  static block pointers, conditional sensitivity), and the two run_app helpers.
+  Logs BUG-014 (p->heighttype overwritten unconditionally), BUG-015
+  (configure() signature mismatch), and BUG-016 (alpha not applied to initial
+  color button display).  No logic changes.
+
 ## Version: 8.3.33
 * docs: add full Doxygen-style comments to panel/panel.h and panel/panel.c.
   Documents the full startup sequence (xconf parse -> panel_start_gui ->

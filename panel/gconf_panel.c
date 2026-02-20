@@ -1,3 +1,53 @@
+/**
+ * @file gconf_panel.c
+ * @brief Panel preferences dialog — global settings tab and dialog lifecycle.
+ *
+ * Implements the top-level `configure(xconf *xc)` entry point and the
+ * three tab pages of the fbpanel preferences dialog:
+ *
+ *   1. "Panel" tab  (mk_tab_global)  — Geometry, Properties, Visual Effects
+ *   2. "Plugins" tab (mk_tab_plugins) — plugin list (implemented in gconf_plugins.c)
+ *   3. "Profile" tab (mk_tab_profile) — read-only profile path display
+ *
+ * DIALOG LIFECYCLE
+ * ----------------
+ * The dialog is a GTK_DIALOG_MODAL window, but gtk_window_set_modal() is
+ * immediately called with FALSE so it behaves as a non-blocking preferences
+ * window.  Only one instance can be open at a time (guarded by the static
+ * `dialog` pointer).
+ *
+ * XCONF SNAPSHOT PATTERN
+ * ----------------------
+ * mk_dialog() creates two deep copies of the panel's config tree (oxc):
+ *   - A "baseline" snapshot stored as dialog object data under "oxc".
+ *   - A "working copy" (xc) passed to the tab builders; edit widgets write
+ *     into this copy immediately on user interaction.
+ *
+ * When the user clicks Apply or OK, dialog_response_event() calls xconf_cmp()
+ * to compare xc against the baseline.  If they differ, the config is saved
+ * (xconf_save_to_profile) and gtk_main_quit() is called to trigger a panel
+ * restart (the main loop restarts the panel from the new config on the next
+ * iteration).  The dialog is destroyed and both xconf copies are freed on
+ * Close/OK/delete-event.
+ *
+ * STATIC BLOCK POINTERS
+ * ---------------------
+ * gl_block, geom_block, prop_block, effects_block, color_block, corner_block,
+ * layer_block, and ah_block are file-scope statics.  They are valid for the
+ * lifetime of the dialog and are freed in dialog_response_event() after
+ * gtk_widget_destroy(dialog).  These must NOT be accessed after the dialog is
+ * closed.
+ *
+ * CONDITIONAL SENSITIVITY
+ * -----------------------
+ * Sub-blocks are conditionally enabled/disabled via gtk_widget_set_sensitive:
+ *   - color_block  — enabled only when "transparent" is checked
+ *   - corner_block — enabled only when "roundcorners" is checked
+ *   - ah_block     — enabled only when "autohide" is checked
+ *   - layer_block  — enabled only when "setlayer" is checked
+ * The sensitivity is updated immediately on dialog creation and on every change
+ * via the effects_changed() and prop_changed() callbacks.
+ */
 
 #include "gconf.h"
 #include "panel.h"
@@ -5,11 +55,15 @@
 //#define DEBUGPRN
 #include "dbg.h"
 
+/** Active preferences dialog; NULL when closed. Only one dialog at a time. */
 static GtkWidget *dialog;
+
+/* Geometry tab widget handles (used by geom_changed to adjust spin ranges). */
 static GtkWidget *width_spin, *width_opt;
 static GtkWidget *xmargin_spin, *ymargin_spin;
 static GtkWidget *allign_opt;
 
+/* gconf_block handles for all sub-sections; freed in dialog_response_event. */
 static gconf_block *gl_block;
 static gconf_block *geom_block;
 static gconf_block *prop_block;
@@ -19,14 +73,25 @@ static gconf_block *corner_block;
 static gconf_block *layer_block;
 static gconf_block *ah_block;
 
+/** Indent in pixels for second-level sub-blocks (color, corner, ah, layer). */
 #define INDENT_2 25
 
 
+/** Forward declaration: Plugins tab builder (implemented in gconf_plugins.c). */
 GtkWidget *mk_tab_plugins(xconf *xc);
 
 /*********************************************************
  * panel effects
  *********************************************************/
+
+/**
+ * effects_changed - update sensitivity of effect sub-blocks on any effects change.
+ * @b: The effects_block whose xconf data (panel xconf) is read.
+ *
+ * Called as a swapped GCallback whenever any widget in effects_block changes.
+ * Reads the current values of "transparent", "roundcorners", and "autohide"
+ * from the working xconf and shows/hides the dependent sub-blocks accordingly.
+ */
 static void
 effects_changed(gconf_block *b)
 {
@@ -43,6 +108,16 @@ effects_changed(gconf_block *b)
 }
 
 
+/**
+ * mk_effects_block - build the "Visual Effects" section into gl_block.
+ * @xc: Working xconf node for the "global" config section.
+ *
+ * Creates effects_block and its four sub-blocks (color_block, corner_block,
+ * ah_block) and packs them all into gl_block.
+ *
+ * Note: the "Max Element Height" spin is added to effects_block directly
+ * (not via a sub-block) without a conditional sensitivity guard.
+ */
 static void
 mk_effects_block(xconf *xc)
 {
@@ -112,6 +187,14 @@ mk_effects_block(xconf *xc)
 /*********************************************************
  * panel properties
  *********************************************************/
+
+/**
+ * prop_changed - update sensitivity of layer_block when "setlayer" changes.
+ * @b: The prop_block whose xconf data is read.
+ *
+ * Called as a swapped GCallback whenever any widget in prop_block changes.
+ * layer_block is enabled only when "setlayer" is checked.
+ */
 static void
 prop_changed(gconf_block *b)
 {
@@ -122,6 +205,14 @@ prop_changed(gconf_block *b)
     return;
 }
 
+/**
+ * mk_prop_block - build the "Properties" section into gl_block.
+ * @xc: Working xconf node for the "global" config section.
+ *
+ * Creates prop_block with checkboxes for "Do not cover by maximized windows"
+ * (setpartialstrut), "Set 'Dock' type" (setdocktype), "Set stacking layer"
+ * (setlayer), and the conditional layer_block with an enum combo.
+ */
 static void
 mk_prop_block(xconf *xc)
 {
@@ -171,6 +262,17 @@ mk_prop_block(xconf *xc)
 /*********************************************************
  * panel geometry
  *********************************************************/
+
+/**
+ * geom_changed - update width spin range and xmargin sensitivity on geometry change.
+ * @b: The geom_block whose data (panel xconf) is read.
+ *
+ * - xmargin_spin is enabled only when allign != ALLIGN_CENTER.
+ * - width_spin is enabled only when widthtype != WIDTH_REQUEST.
+ * - If widthtype == WIDTH_PERCENT, the width range is clamped to [0, 100].
+ * - If widthtype == WIDTH_PIXEL, the range is set to the monitor dimension
+ *   (width for top/bottom panels, height for left/right panels).
+ */
 static void
 geom_changed(gconf_block *b)
 {
@@ -196,6 +298,15 @@ geom_changed(gconf_block *b)
     return;
 }
 
+/**
+ * mk_geom_block - build the "Geometry" section into gl_block.
+ * @xc: Working xconf node for the "global" config section.
+ *
+ * Creates geom_block with spin+combo rows for Width (value + widthtype),
+ * Height, Edge, Alignment, X Margin, and Y Margin.
+ * The file-static width_spin, width_opt, allign_opt, xmargin_spin, ymargin_spin
+ * pointers are saved for use by geom_changed.
+ */
 static void
 mk_geom_block(xconf *xc)
 {
@@ -252,6 +363,16 @@ mk_geom_block(xconf *xc)
     gconf_block_add(gl_block, gtk_label_new(" "), TRUE);
 }
 
+/**
+ * mk_tab_global - build and return the "Panel" notebook tab page.
+ * @xc: Working xconf tree root.
+ *
+ * Creates gl_block and calls mk_geom_block, mk_prop_block, mk_effects_block
+ * in order.  Then calls the three changed-callbacks to set initial sensitivity
+ * of all conditional sub-blocks.
+ *
+ * Returns: (transfer none) GtkBox page widget; owned by the dialog notebook.
+ */
 static GtkWidget *
 mk_tab_global(xconf *xc)
 {
@@ -275,6 +396,14 @@ mk_tab_global(xconf *xc)
     return page;
 }
 
+/**
+ * mk_tab_profile - build and return the "Profile" notebook tab page.
+ * @xc: Working xconf tree (unused; profile info comes from panel_get_profile()).
+ *
+ * Displays a read-only label showing the active profile name and its file path.
+ *
+ * Returns: (transfer none) GtkBox page widget; owned by the dialog notebook.
+ */
 static GtkWidget *
 mk_tab_profile(xconf *xc)
 {
@@ -295,6 +424,25 @@ mk_tab_profile(xconf *xc)
     return page;
 }
 
+/**
+ * dialog_response_event - handle Apply, OK, Close, and delete-event responses.
+ * @_dialog: The dialog (unused parameter; use the static `dialog` pointer).
+ * @rid:     GTK_RESPONSE_APPLY, GTK_RESPONSE_OK, GTK_RESPONSE_CLOSE, or
+ *           GTK_RESPONSE_DELETE_EVENT.
+ * @xc:      The working xconf copy (connected via g_signal_connect).
+ *
+ * On Apply or OK:
+ *   - Compares working xc against the baseline snapshot (retrieved from dialog
+ *     object data "oxc") using xconf_cmp.
+ *   - If different, saves the new config and calls gtk_main_quit() to trigger
+ *     a panel restart.  The baseline snapshot is replaced with the new state.
+ *
+ * On Close, OK, or delete-event:
+ *   - Destroys the dialog.
+ *   - Frees all eight gconf_blocks (AFTER gtk_widget_destroy so widgets are gone).
+ *   - Frees both the working xc and the baseline oxc trees via xconf_del.
+ *   - Sets the static `dialog` pointer to NULL.
+ */
 static void
 dialog_response_event(GtkDialog *_dialog, gint rid, xconf *xc)
 {
@@ -333,6 +481,15 @@ dialog_response_event(GtkDialog *_dialog, gint rid, xconf *xc)
     return;
 }
 
+/**
+ * dialog_cancel - handle the dialog's "delete-event" (window-manager close).
+ * @_dialog: The dialog.
+ * @event:   The GdkEvent (unused).
+ * @xc:      The working xconf copy.
+ *
+ * Delegates to dialog_response_event with GTK_RESPONSE_CLOSE.
+ * Returns FALSE so GTK proceeds with the default delete-event handling.
+ */
 static gboolean
 dialog_cancel(GtkDialog *_dialog, GdkEvent *event, xconf *xc)
 {
@@ -340,6 +497,22 @@ dialog_cancel(GtkDialog *_dialog, GdkEvent *event, xconf *xc)
     return FALSE;
 }
 
+/**
+ * mk_dialog - create the preferences GtkDialog with all three tab pages.
+ * @oxc: The original (live) panel xconf tree; two deep copies are taken here.
+ *       @oxc itself is NOT modified by the dialog.
+ *
+ * Creates two xconf_dup copies of @oxc:
+ *   1. Stored as dialog object data "oxc" — the baseline snapshot for change
+ *      detection.  Freed in dialog_response_event on close.
+ *   2. The working copy (xc) passed to tab builders and to the response
+ *      signal.  Freed in dialog_response_event on close.
+ *
+ * The dialog is 400x500 px, non-modal (gtk_window_set_modal FALSE), and uses
+ * IMGPREFIX "/logo.png" as its window icon.
+ *
+ * Returns: (transfer none) the newly-created GtkDialog (also stored in `dialog`).
+ */
 static GtkWidget *
 mk_dialog(xconf *oxc)
 {
@@ -409,6 +582,17 @@ mk_dialog(xconf *oxc)
     return dialog;
 }
 
+/**
+ * configure - open (or raise) the panel preferences dialog.
+ * @xc: The live panel xconf tree; passed to mk_dialog to take a working copy.
+ *
+ * If no dialog is open, creates one via mk_dialog.  If a dialog is already
+ * open, raises it via gtk_widget_show.
+ *
+ * Note: misc.h declares configure() with no parameters (void configure()).
+ * This definition takes an xconf* parameter — see BUG-015 in
+ * docs/BUGS_AND_ISSUES.md for the signature mismatch.
+ */
 void
 configure(xconf *xc)
 {

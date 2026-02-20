@@ -391,3 +391,98 @@ if (level >= G_N_ELEMENTS(space))
     level = G_N_ELEMENTS(space) - 1;
 return space[level];
 ```
+
+---
+
+### BUG-014 — `p->heighttype` overwritten to HEIGHT_PIXEL unconditionally
+
+**File**: `panel/panel.c:1095` (`panel_parse_global`)
+**Severity**: minor (config option rendered ineffective)
+**Status**: open
+
+**Description**:
+`panel_parse_global` reads `heighttype` from the xconf config at line 1053:
+```c
+XCG(xc, "heighttype", &p->heighttype, enum, heighttype_enum);
+```
+But immediately after the edge-based orientation setup (line 1095):
+```c
+p->heighttype = HEIGHT_PIXEL;
+```
+This unconditional assignment overwrites whatever the config file specified.
+The `if (p->heighttype == HEIGHT_PIXEL)` block that follows will therefore
+always be entered, making `HEIGHT_REQUEST` and any other heighttype values
+impossible to use through the config.
+
+**Impact**: Minor — since `HEIGHT_PIXEL` is the only working mode in practice,
+normal users are unaffected.  The `HEIGHT_REQUEST` mode (auto-size to content)
+is silently broken.
+
+**Suspected fix**: Remove line 1095 or move the height clamping inside a
+`if (p->heighttype == HEIGHT_PIXEL)` guard without the unconditional override.
+
+---
+
+### BUG-015 — `configure()` signature mismatch between misc.h and gconf_panel.c
+
+**File**: `panel/misc.h:311` (declaration) and `panel/gconf_panel.c:413` (definition)
+**Severity**: minor (latent linkage issue)
+**Status**: open
+
+**Description**:
+`misc.h` declares:
+```c
+void configure();
+```
+but `gconf_panel.c` defines:
+```c
+void configure(xconf *xc)
+```
+
+The two signatures do not match.  In C, `void configure()` is an old-style
+declaration meaning "takes an unspecified number of arguments" — it does not
+conflict with a definition that takes `xconf *xc`.  However, any call site that
+uses the `void configure()` prototype will pass no arguments, while the
+implementation expects one.  The only known call site is `panel.c:panel_make_menu`
+which calls `configure(p->xc)` directly without going through the misc.h
+prototype (it includes gconf.h or panel.h, not the misc.h stub), so this is
+currently harmless.
+
+**Impact**: Minor — could cause a crash or silent misuse if new code calls
+`configure()` with no arguments through the misc.h prototype.
+
+**Suspected fix**: Update `misc.h` to declare `void configure(xconf *xc)` and
+add `#include "xconf.h"` (or `"gconf.h"`) to misc.h if needed, or remove the
+declaration from misc.h entirely since it is already declared via gconf.h.
+
+---
+
+### BUG-016 — `gconf_edit_color` alpha not applied to initial button display
+
+**File**: `panel/gconf.c:gconf_edit_color` (lines 218-220)
+**Severity**: cosmetic
+**Status**: open
+
+**Description**:
+When `xc_alpha` is provided, the function reads the stored alpha value and
+scales it from 0-255 to 0-0xFFFF:
+
+```c
+xconf_get_int(xc_alpha, &a);
+a <<= 8; /* scale to 0..FFFF from 0..FF */
+gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(w), &c);  // c.alpha unchanged!
+```
+
+The variable `a` is computed but never written into `c.alpha`.  The second
+`gtk_color_chooser_set_rgba` call resets the colour to `c` which still has its
+original alpha (from `gdk_rgba_parse`).  So the colour button displays the
+wrong alpha on initial load.
+
+The `a` value is only stored as object data (`g_object_set_data(... "alpha" ...)`)
+for use by the save callback, not for display initialisation.
+
+**Suspected fix**:
+```c
+c.alpha = a / 65535.0;   /* convert 0..FFFF back to 0.0..1.0 */
+gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(w), &c);
+```

@@ -1,3 +1,30 @@
+/**
+ * @file gconf.c
+ * @brief gconf_block implementation — row-layout helpers for the preferences dialog.
+ *
+ * Implements the four config-edit widget factories (int, enum, boolean, color)
+ * and the three gconf_block management functions (new, free, add).
+ *
+ * DESIGN
+ * ------
+ * gconf_block is a layout helper, not a GObject.  It wraps a GtkBox hierarchy
+ * (main -> optional-indent-spacer + area -> rows-of-hboxes) and a horizontal
+ * GtkSizeGroup that keeps the first widget in each new row the same width.
+ *
+ * Each edit factory:
+ *   1. Reads the current value from the xconf node (with a sensible default).
+ *   2. Creates a GTK control pre-populated with that value.
+ *   3. Connects a "value-changed" / "changed" / "toggled" / "color-set" handler
+ *      that writes the new value back to xconf immediately.
+ *   4. If a block (@b) with a callback is provided, also connects a swapped
+ *      signal to b->cb(b) so the dialog can react to the change (e.g., show/hide
+ *      dependent sub-blocks via gtk_widget_set_sensitive).
+ *
+ * INDENT_SIZE
+ * -----------
+ * INDENT_SIZE (20 px) is the pixel width of the indent spacer used by sub-blocks
+ * (color_block, corner_block, ah_block, layer_block) inside gconf_panel.c.
+ */
 
 #include "gconf.h"
 #include "misc.h"
@@ -5,9 +32,20 @@
 //#define DEBUGPRN
 #include "dbg.h"
 
+/** Pixel width of the indent spacer for nested sub-blocks. */
 #define INDENT_SIZE 20
 
 
+/**
+ * gconf_block_new - allocate and initialize a gconf_block.
+ *
+ * Creates the outer horizontal box (b->main), an optional fixed-width indent
+ * spacer (if indent > 0), and the inner vertical area box (b->area).
+ * Also creates the horizontal GtkSizeGroup (b->sgr) that aligns first-column
+ * labels across rows.
+ *
+ * Returns: (transfer full) newly-allocated gconf_block; never NULL.
+ */
 gconf_block *
 gconf_block_new(GCallback cb, gpointer data, int indent)
 {
@@ -35,6 +73,16 @@ gconf_block_new(GCallback cb, gpointer data, int indent)
     return b;
 }
 
+/**
+ * gconf_block_free - release a gconf_block's non-widget resources.
+ *
+ * Unref's the GtkSizeGroup (which releases its reference on each widget it
+ * tracks), frees the rows GSList (not the hbox widgets, which are already
+ * destroyed by the parent widget tree), and g_free's the struct.
+ *
+ * Must be called AFTER gtk_widget_destroy on the dialog that owns b->main,
+ * so all widget references have already been released by GTK.
+ */
 void
 gconf_block_free(gconf_block *b)
 {
@@ -43,6 +91,16 @@ gconf_block_free(gconf_block *b)
     g_free(b);
 }
 
+/**
+ * gconf_block_add - add a widget to the current row or start a new row.
+ *
+ * If new_row is TRUE (or the rows list is empty), creates a new horizontal
+ * GtkBox row and prepends it to b->rows.  Adds a trailing expand-filler GtkBox
+ * so content left-aligns.  If @w is a GtkLabel when starting a new row, its
+ * x-alignment is set to 0.0 and it is added to b->sgr for column alignment.
+ *
+ * Packs @w into the current (possibly just-created) last row.
+ */
 void
 gconf_block_add(gconf_block *b, GtkWidget *w, gboolean new_row)
 {
@@ -76,6 +134,12 @@ gconf_block_add(gconf_block *b, GtkWidget *w, gboolean new_row)
 /*********************************************************
  * Edit int
  *********************************************************/
+
+/**
+ * gconf_edit_int_cb - write the spin button value back to the xconf node.
+ * @w:  Spin button whose value changed.
+ * @xc: xconf integer node to update (transfer none — owned by the config tree).
+ */
 static void
 gconf_edit_int_cb(GtkSpinButton *w, xconf *xc)
 {
@@ -85,6 +149,16 @@ gconf_edit_int_cb(GtkSpinButton *w, xconf *xc)
     xconf_set_int(xc, i);
 }
 
+/**
+ * gconf_edit_int - create a GtkSpinButton bound to an integer xconf node.
+ *
+ * Reads the current integer value from @xc, seeds the spin button with it,
+ * and writes it back to @xc on every "value-changed" emission.
+ * If @b has a callback, also fires it (swapped) on value changes.
+ *
+ * Returns: (transfer none) GtkSpinButton; owned by @b's widget tree after
+ *          gconf_block_add.
+ */
 GtkWidget *
 gconf_edit_int(gconf_block *b, xconf *xc, int min, int max)
 {
@@ -108,6 +182,16 @@ gconf_edit_int(gconf_block *b, xconf *xc, int min, int max)
 /*********************************************************
  * Edit enum
  *********************************************************/
+
+/**
+ * gconf_edit_enum_cb - write the selected combo index back to the xconf node.
+ * @w:  Combo box whose selection changed.
+ * @xc: xconf enum node to update.
+ *
+ * The xconf_enum table pointer is retrieved from the widget's "enum" object
+ * data (set during gconf_edit_enum) so xconf_set_enum can translate the index
+ * back to the string representation.
+ */
 static void
 gconf_edit_enum_cb(GtkComboBox *w, xconf *xc)
 {
@@ -118,6 +202,18 @@ gconf_edit_enum_cb(GtkComboBox *w, xconf *xc)
     xconf_set_enum(xc, i, g_object_get_data(G_OBJECT(w), "enum"));
 }
 
+/**
+ * gconf_edit_enum - create a GtkComboBoxText bound to an enum xconf node.
+ *
+ * Reads the current enum value from @xc, populates the combo with all
+ * options from @e (using desc if available, otherwise str), sets the active
+ * index, and writes back on "changed".
+ *
+ * The @e pointer is stored in the widget's "enum" object data for use by the
+ * callback; the table must remain valid for the lifetime of the widget.
+ *
+ * Returns: (transfer none) GtkComboBoxText.
+ */
 GtkWidget *
 gconf_edit_enum(gconf_block *b, xconf *xc, xconf_enum *e)
 {
@@ -149,6 +245,12 @@ gconf_edit_enum(gconf_block *b, xconf *xc, xconf_enum *e)
 /*********************************************************
  * Edit boolean
  *********************************************************/
+
+/**
+ * gconf_edit_bool_cb - write the check button state back to the xconf node.
+ * @w:  Toggle button whose state changed.
+ * @xc: xconf bool node to update (uses bool_enum for str conversion).
+ */
 static void
 gconf_edit_bool_cb(GtkToggleButton *w, xconf *xc)
 {
@@ -159,6 +261,14 @@ gconf_edit_bool_cb(GtkToggleButton *w, xconf *xc)
     xconf_set_enum(xc, i, bool_enum);
 }
 
+/**
+ * gconf_edit_boolean - create a GtkCheckButton bound to a boolean xconf node.
+ *
+ * Reads the current boolean value from @xc via bool_enum, initialises the
+ * check button's state, and writes it back on "toggled".
+ *
+ * Returns: (transfer none) GtkCheckButton.
+ */
 GtkWidget *
 gconf_edit_boolean(gconf_block *b, xconf *xc, gchar *text)
 {
@@ -185,6 +295,17 @@ gconf_edit_boolean(gconf_block *b, xconf *xc, gchar *text)
 /*********************************************************
  * Edit color
  *********************************************************/
+
+/**
+ * gconf_edit_color_cb - write the chosen colour (and alpha) back to xconf nodes.
+ * @w:        GtkColorButton whose colour changed.
+ * @xc:       xconf node for the colour string (set as "#RRGGBB" via
+ *            gdk_color_to_RRGGBB + xconf_set_value).
+ *
+ * If an alpha xconf node was stored in the widget's "alpha" object data,
+ * extracts the alpha channel (0.0–1.0 scaled to 0–255) and stores it as an
+ * integer via xconf_set_int.
+ */
 static void
 gconf_edit_color_cb(GtkColorButton *w, xconf *xc)
 {
@@ -200,6 +321,19 @@ gconf_edit_color_cb(GtkColorButton *w, xconf *xc)
     }
 }
 
+/**
+ * gconf_edit_color - create a GtkColorButton bound to colour and alpha xconf nodes.
+ *
+ * Initialises the button with the colour from @xc_color (parsed as "#RRGGBB").
+ * If @xc_alpha is provided, alpha editing is enabled and the xc_alpha pointer
+ * is stored in the widget's "alpha" object data for the callback.
+ *
+ * Note: The initial alpha channel is read from @xc_alpha (scaled 0-255 to
+ * 0-0xFFFF) but is NOT applied to the displayed button colour (the variable
+ * `a` is computed but discarded — see BUG-015 in docs/BUGS_AND_ISSUES.md).
+ *
+ * Returns: (transfer none) GtkColorButton.
+ */
 GtkWidget *
 gconf_edit_color(gconf_block *b, xconf *xc_color, xconf *xc_alpha)
 {

@@ -78,11 +78,11 @@ menu_create_item(xconf *xc, GtkWidget *menu, menu_priv *m)
     mi = gtk_menu_item_new_with_label(name ? name : "");
     gtk_container_set_border_width(GTK_CONTAINER(mi), 0);
     XCG(xc, "image", &fname, str);
-    fname = expand_tilda(fname);
-    XCG(xc, "icon", &iname, str);
+    fname = expand_tilda(fname);  /* expand_tilda always g_strdup's */
     g_free(fname);
-    g_free(iname);
-    iname = NULL;
+    /* iname would be XCG(..., str) — a raw pointer into the xconf tree;
+     * do NOT free it here.  xconf_del(m->xc) owns and frees it on menu
+     * destruction.  Freeing it here caused a double-free crash. */
 
     if (menu)
     {

@@ -1,3 +1,15 @@
+## Version: 8.3.23
+* menu: fix double-free crash triggered ~30 s after startup (or on first
+  system-menu rebuild).  In menu_create_item(), iname was obtained via
+  XCG(xc, "icon", &iname, str) which returns a raw pointer into the xconf
+  tree (not a copy).  The subsequent g_free(iname) freed the xconf node's
+  value in-place; when menu_destroy() later called xconf_del(m->xc), the
+  same memory was freed again → "double free detected in tcache 2" / Abort.
+  Fix: remove g_free(iname) — the xconf tree owns and frees that string.
+  (Also remove the now-redundant iname = NULL.)
+  Identified with AddressSanitizer; confirmed by ASAN backtrace showing
+  first free at menu.c:84, second free at xconf.c:91.
+
 ## Version: 8.3.22
 * pager, icons: replace deprecated global gdk_window_add_filter(NULL, ...)
   with per-window GDK filters, matching the pattern already used by the

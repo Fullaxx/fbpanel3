@@ -1,3 +1,13 @@
+## Version: 8.3.24
+* panel: respond to screen size changes without requiring a window manager.
+  Connect to GdkScreen::monitors-changed (fired by GDK's built-in RandR
+  event handling) to reposition and resize the panel window immediately when
+  xrandr changes the display geometry.  Previously the panel only reacted to
+  _NET_DESKTOP_GEOMETRY atom changes (set by WMs), leaving the panel
+  off-screen in bare-X / Xvfb environments after a resize and producing
+  spurious "Negative content height" GTK warnings from transiently mis-sized
+  GtkButton allocations during the resize event.
+
 ## Version: 8.3.23
 * menu: fix double-free crash triggered ~30 s after startup (or on first
   system-menu rebuild).  In menu_create_item(), iname was obtained via

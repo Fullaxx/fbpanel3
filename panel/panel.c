@@ -247,6 +247,24 @@ make_round_corners(panel *p)
     return;
 }
 
+/* Called by GDK when the screen layout changes (e.g. xrandr resize).
+ * Recalculate panel geometry and move/resize the window immediately so
+ * widgets are never allocated with incorrect dimensions. */
+static void
+panel_screen_changed(GdkScreen *screen, panel *p)
+{
+    (void)screen;
+    calculate_position(p);
+    /* Refresh the minimum-height constraint before queuing any layout so
+     * GTK's own monitors-changed handler (which fires before ours and calls
+     * gtk_widget_queue_resize) cannot shrink the window below p->ah. */
+    gtk_widget_set_size_request(p->topgwin, -1, p->ah);
+    gtk_window_move(GTK_WINDOW(p->topgwin), p->ax, p->ay);
+    gtk_window_resize(GTK_WINDOW(p->topgwin), p->aw, p->ah);
+    if (p->setstrut)
+        panel_set_wm_strut(p);
+}
+
 static gboolean
 panel_configure_event(GtkWidget *widget, GdkEventConfigure *e, panel *p)
 {
@@ -571,6 +589,9 @@ panel_start_gui(panel *p)
 
     gtk_widget_realize(p->topgwin);
     p->topxwin = GDK_WINDOW_XID(gtk_widget_get_window(p->topgwin));
+    p->monitors_sid = g_signal_connect(
+        gtk_widget_get_screen(p->topgwin), "monitors-changed",
+        G_CALLBACK(panel_screen_changed), p);
     DBG("topxwin = %lx\n", p->topxwin);
     /* ensure configure event */
     XMoveWindow(GDK_DPY, p->topxwin, 20, 20);
@@ -578,6 +599,10 @@ panel_start_gui(panel *p)
 
     gtk_widget_set_app_paintable(p->topgwin, TRUE);
     calculate_position(p);
+    /* Set a hard minimum height so GTK never shrinks the window below p->ah
+     * during transient queue_resize passes (e.g. triggered by the internal
+     * GtkWindow::monitors-changed handler before our own handler fires). */
+    gtk_widget_set_size_request(p->topgwin, -1, p->ah);
     gtk_window_move(GTK_WINDOW(p->topgwin), p->ax, p->ay);
     gtk_window_resize(GTK_WINDOW(p->topgwin), p->aw, p->ah);
     DBG("move-resize x %d y %d w %d h %d\n", p->ax, p->ay, p->aw, p->ah);
@@ -799,6 +824,11 @@ panel_stop(panel *p)
     XSelectInput(GDK_DPY, GDK_ROOT_WINDOW(), NoEventMask);
     gdk_window_remove_filter(gdk_get_default_root_window(),
           (GdkFilterFunc)panel_event_filter, p);
+    if (p->monitors_sid) {
+        g_signal_handler_disconnect(
+            gtk_widget_get_screen(p->topgwin), p->monitors_sid);
+        p->monitors_sid = 0;
+    }
     gtk_widget_destroy(p->topgwin);
     gtk_widget_destroy(p->menu);
     g_object_unref(fbev);

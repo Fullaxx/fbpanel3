@@ -76,6 +76,8 @@ typedef struct _panel
 
     int spacing;
 
+    gulong monitors_sid;   /* GdkScreen::monitors-changed handler id */
+
     guint desknum;
     guint curdesk;
     guint32 *workarea;

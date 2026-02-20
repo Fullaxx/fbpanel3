@@ -1,3 +1,12 @@
+## Version: 8.3.29
+* docs: add full Doxygen-style comments to panel/gtkbar.h and panel/gtkbar.c.
+  Documents the grid layout algorithm (rows×cols from dimension and N visible
+  children), the empty-bar 2×2 minimum and its relation to the v8.3.24
+  "Negative content height" fix, the critical parent-class size_allocate
+  requirement (v8.3.7 fix), the unused MAX_CHILD_SIZE macro, the child-cell
+  clamping logic, and the prohibition on calling queue_draw from size_allocate.
+  No logic changes.
+
 ## Version: 8.3.28
 * docs: add full Doxygen-style comments to panel/plugin.h and panel/plugin.c.
   Documents the class registry (class_ht hash table, built-in vs dynamic

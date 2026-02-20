@@ -224,3 +224,34 @@ Any open GDK connections, files, or sockets are abandoned.
 **Suspected fix**: Return NULL from `read_block` and propagate the error up
 to `xconf_new_from_file()`, which would then also return NULL.  Callers
 would need to handle NULL gracefully.
+
+---
+
+### BUG-007 — `default_plugin_edit_config` name mismatch between header and implementation
+
+**File**: `panel/plugin.h:123` and `panel/plugin.c:202`
+**Severity**: moderate (unresolved symbol in any caller)
+**Status**: open
+
+**Description**:
+`plugin.h` declares:
+```c
+GtkWidget *default_plugin_instance_edit_config(plugin_instance *pl);
+```
+but `plugin.c` defines:
+```c
+GtkWidget *default_plugin_edit_config(plugin_instance *pl)
+```
+The names differ (`default_plugin_instance_edit_config` vs
+`default_plugin_edit_config`).  Any code that calls the header-declared
+name will fail to link (or silently resolve to an unrelated symbol via
+`--export-dynamic`).
+
+**Reproduction**:
+Search for callers of `default_plugin_instance_edit_config` in the codebase.
+If none exist, the declaration is dead code.  If callers exist, they
+get an unresolved symbol at link time.
+
+**Suspected fix**: Rename the definition in `plugin.c` to match the header
+declaration (`default_plugin_instance_edit_config`), or vice versa.  Then
+verify all callers use the consistent name.

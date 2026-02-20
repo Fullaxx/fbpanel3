@@ -1,3 +1,13 @@
+## Version: 8.3.28
+* docs: add full Doxygen-style comments to panel/plugin.h and panel/plugin.c.
+  Documents the class registry (class_ht hash table, built-in vs dynamic
+  classes, double-open/close unload pattern), the full instance lifecycle
+  (plugin_load → plugin_start → plugin_stop → plugin_put), pwid ownership
+  rules (plugin must not destroy it), the invisible plugin placeholder
+  pattern, and the PLUGIN macro mechanics. Adds BUG-007 to
+  docs/BUGS_AND_ISSUES.md (default_plugin_edit_config name mismatch between
+  header declaration and implementation). No logic changes.
+
 ## Version: 8.3.27
 * docs: add full Doxygen-style comments to panel/ev.h and panel/ev.c.
   Documents the EWMH event bus signal flow, the lazy invalidation pattern

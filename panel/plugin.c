@@ -1,3 +1,36 @@
+/**
+ * @file plugin.c
+ * @brief Plugin class registry and instance lifecycle — implementation.
+ *
+ * REGISTRY
+ * --------
+ * class_ht is a GHashTable<type_string → plugin_class*> that tracks all
+ * registered plugin classes.  It is created on first registration and
+ * destroyed when the last class is unregistered.
+ *
+ * Built-in classes: registered before the_panel is set (dynamic = 0).
+ *   class_put() never calls g_module_close() for built-in classes.
+ *
+ * Dynamic classes: registered after dlopen (dynamic = 1).
+ *   class_put() calls g_module_close() twice when count → 0:
+ *   once to undo the initial open in class_get(), and once more to
+ *   trigger the destructor (__attribute__((destructor))) that calls
+ *   class_unregister().
+ *
+ * INSTANCE LIFECYCLE
+ * ------------------
+ *   plugin_load()  → allocates priv_size bytes; sets instance->class
+ *   plugin_start() → creates pwid; calls constructor()
+ *   plugin_stop()  → calls destructor(); destroys pwid
+ *   plugin_put()   → g_free(instance); class_put()
+ *
+ * pwid OWNERSHIP
+ * --------------
+ * plugin_start() creates pwid and adds it to panel->box (container takes
+ * the floating ref).  plugin_stop() calls gtk_widget_destroy(pwid), which
+ * triggers GTK's recursive child destruction.  Plugins must NOT destroy
+ * pwid in their destructor.
+ */
 
 #include "plugin.h"
 
@@ -16,13 +49,38 @@
 
 //#define DEBUGPRN
 #include "dbg.h"
+
+/** Back-reference to the running panel; set before gtk_main(). */
 extern panel *the_panel;
 
 
 /**************************************************************/
+
+/**
+ * class_ht - global hash table mapping type strings to plugin_class pointers.
+ *
+ * Keys:   plugin_class::type (const char*; owned by the plugin_class struct).
+ * Values: plugin_class* (not owned by the table; owned by the .so or static).
+ *
+ * Created on first class_register() call; destroyed when the last class
+ * is unregistered via class_unregister().
+ */
 static GHashTable *class_ht;
 
 
+/**
+ * class_register - add @p to the plugin class registry.
+ * @p: Plugin class descriptor.  p->type must be unique.
+ *
+ * Sets p->dynamic based on whether the_panel is already initialised
+ * (post-startup dynamic load) or not (built-in, registered at startup).
+ *
+ * Calls exit(1) on duplicate type name — plugin type strings must be
+ * globally unique across all loaded .so files.
+ *
+ * Called automatically by the PLUGIN macro's __attribute__((constructor))
+ * on dlopen, and also manually for built-in classes during startup.
+ */
 void
 class_register(plugin_class *p)
 {
@@ -40,6 +98,14 @@ class_register(plugin_class *p)
     return;
 }
 
+/**
+ * class_unregister - remove @p from the plugin class registry.
+ * @p: Plugin class to unregister.
+ *
+ * Destroys the hash table when it becomes empty (no registered classes).
+ * Called automatically by the PLUGIN macro's __attribute__((destructor))
+ * on dlclose.
+ */
 void
 class_unregister(plugin_class *p)
 {
@@ -55,6 +121,19 @@ class_unregister(plugin_class *p)
     return;
 }
 
+/**
+ * class_put - decrement the reference count for class @name.
+ * @name: Plugin type string (e.g. "taskbar").
+ *
+ * If count > 0 after decrement, or if the class is not dynamic, returns
+ * immediately.  Otherwise opens the .so path a second time so there are
+ * two open handles, then closes both.  The second close triggers the
+ * __attribute__((destructor)) which calls class_unregister().
+ *
+ * Note: the double-open/double-close pattern is intentional — the first
+ * open in class_get() incremented GModule's internal refcount; the extra
+ * open here provides a second handle so both can be closed.
+ */
 void
 class_put(char *name)
 {
@@ -74,13 +153,28 @@ class_put(char *name)
     m = g_module_open(s, G_MODULE_BIND_LAZY);
     g_free(s);
     if (m) {
-        /* Close it twise to undo initial open in class_get */
+        /* Close it twice to undo initial open in class_get */
         g_module_close(m);
         g_module_close(m);
     }
     return;
 }
 
+/**
+ * class_get - look up or dynamically load the plugin class named @name.
+ * @name: Plugin type string (e.g. "taskbar").
+ *
+ * Algorithm:
+ *   1. If class_ht already contains @name, increments count and returns it.
+ *   2. Otherwise constructs the .so path (LIBDIR/lib<name>.so) and calls
+ *      g_module_open().  The module's __attribute__((constructor)) fires,
+ *      calling class_register() which inserts the class into class_ht.
+ *   3. Looks up the newly registered class, increments count, and returns it.
+ *
+ * Returns: (transfer none) pointer into class_ht, or NULL if the .so cannot
+ *   be opened or does not register the expected class name.
+ *   Logs g_module_error() on failure.
+ */
 gpointer
 class_get(char *name)
 {
@@ -110,9 +204,23 @@ class_get(char *name)
 }
 
 
-
 /**************************************************************/
 
+/**
+ * plugin_load - allocate a plugin instance for class @type.
+ * @type: Plugin type string (e.g. "taskbar").
+ *
+ * Calls class_get() to obtain (and refcount) the class descriptor, then
+ * allocates priv_size bytes of zeroed memory.  The first
+ * sizeof(plugin_instance) bytes are the public plugin_instance fields;
+ * the remainder are plugin-private.
+ *
+ * Sets instance->class.  The caller (panel_start_gui) must set panel,
+ * xc, expand, padding, and border before calling plugin_start().
+ *
+ * Returns: (transfer full) new plugin_instance, or NULL if class_get()
+ *   fails.  Caller must eventually call plugin_stop() then plugin_put().
+ */
 plugin_instance *
 plugin_load(char *type)
 {
@@ -131,6 +239,16 @@ plugin_load(char *type)
 }
 
 
+/**
+ * plugin_put - free a plugin instance and release its class reference.
+ * @this: Plugin instance previously returned by plugin_load().
+ *
+ * Calls g_free(this) first, then class_put(type) which may trigger
+ * g_module_close() if the class was dynamically loaded and count → 0.
+ *
+ * Must only be called after plugin_stop() has already destroyed pwid.
+ * Accessing @this after this call is undefined behaviour.
+ */
 void
 plugin_put(plugin_instance *this)
 {
@@ -142,9 +260,29 @@ plugin_put(plugin_instance *this)
     return;
 }
 
+/** Forward declaration for the panel right-click handler in panel.c. */
 gboolean panel_button_press_event(GtkWidget *widget, GdkEventButton *event,
         panel *p);
 
+/**
+ * plugin_start - create the plugin container widget and call the constructor.
+ * @this: Plugin instance with panel, xc, expand, padding, and border set.
+ *
+ * For visible plugins (class->invisible == 0):
+ *   - Creates a GtkBgbox named after class->type and packs it into panel->box.
+ *   - Sets BG_INHERIT background if the panel is transparent.
+ *   - Connects the panel right-click button-press handler.
+ *   - Shows the widget.
+ *
+ * For invisible plugins (class->invisible != 0):
+ *   - Creates a hidden GtkBox placeholder to maintain index alignment in
+ *     panel->box (required so Preferences child reordering stays consistent).
+ *
+ * Calls this->class->constructor(this).  If the constructor returns 0
+ * (failure), destroys pwid and returns 0.
+ *
+ * Returns: 1 on success, 0 if the constructor fails.
+ */
 int
 plugin_start(plugin_instance *this)
 {
@@ -169,9 +307,10 @@ plugin_start(plugin_instance *this)
         gtk_widget_show(this->pwid);
         DBG("here\n");
     } else {
-        /* create a no-window widget and do not show it it's usefull to have
-         * unmaped widget for invisible plugins so their indexes in plugin list
-         * are the same as in panel->box. required for children reordering */
+        /* create a no-window widget and do not show it; it's useful to have
+         * an unmapped widget for invisible plugins so their indexes in the
+         * plugin list stay aligned with panel->box children (required for
+         * child reordering in the Preferences dialog). */
         this->pwid = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_box_pack_start(GTK_BOX(this->panel->box), this->pwid, FALSE,
                 TRUE,0);
@@ -187,6 +326,18 @@ plugin_start(plugin_instance *this)
 }
 
 
+/**
+ * plugin_stop - call the plugin destructor and destroy the container widget.
+ * @this: Plugin instance to stop.
+ *
+ * Calls this->class->destructor(this) first, giving the plugin a chance
+ * to disconnect signal handlers and free private resources.  Then
+ * decrements panel->plug_num and calls gtk_widget_destroy(this->pwid),
+ * which recursively destroys all child widgets the plugin created inside pwid.
+ *
+ * After plugin_stop(), call plugin_put() to free the instance memory.
+ * Do not access @this->pwid after this call.
+ */
 void
 plugin_stop(plugin_instance *this)
 {
@@ -198,6 +349,20 @@ plugin_stop(plugin_instance *this)
 }
 
 
+/**
+ * default_plugin_edit_config - fallback Preferences widget for plugins
+ *   without a custom edit_config callback.
+ * @pl: Plugin instance whose class->name is shown in the message.
+ *
+ * Returns: (transfer full) GtkWidget (GtkBox) containing a GtkLabel with
+ *   a human-readable message directing the user to edit the config file
+ *   manually.
+ *
+ * NOTE: this function is defined here as default_plugin_edit_config but
+ * declared in plugin.h as default_plugin_instance_edit_config.  The names
+ * do not match, so calls to the header-declared name are unresolved.
+ * See BUG-007 in docs/BUGS_AND_ISSUES.md.
+ */
 GtkWidget *
 default_plugin_edit_config(plugin_instance *pl)
 {

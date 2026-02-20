@@ -1,3 +1,10 @@
+## Version: 8.3.25
+* docs: add full Doxygen-style comments to panel/xconf.h and panel/xconf.c.
+  Documents every function's contract, parameter ownership (transfer none vs
+  transfer full), and the str-vs-strdup ownership rule.  Adds a cross-reference
+  to BUG-005 (xconf_cmp readability) and BUG-006 (exit(1) on parse error).
+  No logic changes.
+
 ## Version: 8.3.24
 * panel: respond to screen size changes without requiring a window manager.
   Connect to GdkScreen::monitors-changed (fired by GDK's built-in RandR

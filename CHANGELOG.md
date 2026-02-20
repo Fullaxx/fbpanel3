@@ -1,3 +1,15 @@
+## Version: 8.3.31
+* docs: add full Doxygen-style comments to panel/widgets.h and panel/widgets.c.
+  Documents all four public factories (fb_pixbuf_new, fb_image_new,
+  fb_button_new, fb_create_calendar) with (transfer full) ownership annotations,
+  the fb_image_conf_t internal struct (three-pixbuf triple, icon-theme signal
+  lifecycle, iname/fname g_strdup copies), the additive-blend highlight
+  algorithm in fb_pixbuf_make_back_image, the press-shrink compositing in
+  fb_pixbuf_make_press_image, the g_signal_connect_swapped event routing on
+  GtkBgbox, and the enter/leave vs button press return-value semantics.
+  Logs BUG-008 (wasteful pixbuf rebuild for plain images on theme change) and
+  BUG-009 (label parameter silently ignored in fb_button_new).  No logic changes.
+
 ## Version: 8.3.30
 * docs: add full Doxygen-style comments to panel/gtkbgbox.h and panel/gtkbgbox.c.
   Documents GtkBgboxPrivate fields (pixmap ownership, FbBg singleton ref, signal

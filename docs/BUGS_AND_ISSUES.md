@@ -255,3 +255,48 @@ get an unresolved symbol at link time.
 **Suspected fix**: Rename the definition in `plugin.c` to match the header
 declaration (`default_plugin_instance_edit_config`), or vice versa.  Then
 verify all callers use the consistent name.
+
+---
+
+### BUG-008 — `fb_image_icon_theme_changed` rebuilds highlight/press pixbufs for plain images
+
+**File**: `panel/widgets.c:fb_image_icon_theme_changed`
+**Severity**: cosmetic (wasted allocation)
+**Status**: open
+
+**Description**:
+When the icon theme changes, `fb_image_icon_theme_changed` always rebuilds
+`pix[1]` (highlight) and `pix[2]` (press) via `fb_pixbuf_make_back_image`
+and `fb_pixbuf_make_press_image`.  For images created with `fb_image_new`
+directly (not wrapped by `fb_button_new`), `conf->hicolor` is 0 (zero-
+initialised by `g_new0`).  `fb_pixbuf_make_back_image` with `hicolor == 0`
+adds zero to every channel — producing a no-op RGBA copy.  These copies are
+never displayed for plain images (no enter/leave handlers are connected).
+
+**Reproduction**:
+Any icon-theme change when a plain `fb_image_new` image is live.
+
+**Suspected fix**:
+Guard the pix[1]/pix[2] rebuild in `fb_image_icon_theme_changed` with
+`if (conf->hicolor)` (or check whether enter/leave handlers are connected).
+
+---
+
+### BUG-009 — `fb_button_new` `label` parameter is silently ignored
+
+**File**: `panel/widgets.c:fb_button_new` and `panel/widgets.h`
+**Severity**: minor (undocumented missing feature)
+**Status**: open
+
+**Description**:
+`fb_button_new` accepts a `gchar *label` (documented as label text) but never
+uses it.  The original code has a `FIXME` comment acknowledging this.  Any
+plugin passing a non-NULL label string gets no text displayed.
+
+**Reproduction**:
+Call `fb_button_new(..., "My Label")` and observe that no label appears.
+
+**Suspected fix**:
+Either implement label support (add a GtkLabel sibling to the GtkImage inside
+the GtkBgbox, possibly using a GtkBox to stack them), or remove the parameter
+from the API and update all callers.

@@ -1,3 +1,36 @@
+/**
+ * @file widgets.c
+ * @brief fbpanel widget factories — pixbuf, image, button, calendar (implementation).
+ *
+ * Implements the four public factories declared in widgets.h.
+ *
+ * INTERNAL DESIGN
+ * ---------------
+ * State for fb_image and fb_button is stored in an fb_image_conf_t struct
+ * allocated with g_new0() in fb_image_new() and attached to the GtkImage widget
+ * via g_object_set_data(G_OBJECT(image), "conf", conf).  This avoids subclassing
+ * GtkImage while still allowing per-instance data to follow the widget lifetime:
+ * a "destroy" callback frees the struct when the widget is destroyed.
+ *
+ * PIXBUF TRIPLE LIFETIME
+ * ----------------------
+ * pix[0] — normal; created in fb_image_new() and refreshed on icon-theme change.
+ * pix[1] — highlight; created lazily by fb_button_new(); NULL for plain fb_images.
+ * pix[2] — press; created lazily by fb_button_new(); NULL for plain fb_images.
+ *
+ * On icon-theme change (fb_image_icon_theme_changed), all three are rebuilt
+ * unconditionally — even for plain images where pix[1]/pix[2] serve no purpose.
+ * This is harmless (hicolor==0 produces a no-op highlight copy) but wasteful.
+ * See BUG-008 in docs/BUGS_AND_ISSUES.md.
+ *
+ * BUTTON EVENT ROUTING
+ * --------------------
+ * Events are connected on the GtkBgbox parent, not the GtkImage child, using
+ * g_signal_connect_swapped so that the GtkImage is passed as the first argument
+ * to the callbacks.  button-press/release handlers return FALSE to allow event
+ * propagation to the plugin's own "button-press-event" handler.
+ * enter/leave-notify handlers return TRUE (event consumed).
+ */
 
 #include <gtk/gtk.h>
 
@@ -13,15 +46,24 @@
  * FB Pixbuf                                                          *
  **********************************************************************/
 
+/** Maximum pixbuf size in either dimension (clamped in fb_pixbuf_new). */
 #define MAX_SIZE 192
 
-/* Creates a pixbuf. Several sources are tried in these order:
- *   icon named @iname
- *   file from @fname
- *   icon named "missing-image" as a fallabck, if @use_fallback is TRUE.
- * Returns pixbuf or NULL on failure
+/**
+ * fb_pixbuf_new - load a GdkPixbuf from an icon name and/or a file path.
+ * @iname:        Icon name for gtk_icon_theme_load_icon(); may be NULL.
+ * @fname:        File path for gdk_pixbuf_new_from_file_at_size(); may be NULL.
+ * @width:        Desired width; used as the size hint for icon lookup.
+ * @height:       Desired height; used when loading from a file.
+ * @use_fallback: If TRUE and both sources fail, load "gtk-missing-image".
  *
- * Result pixbuf is always smaller then MAX_SIZE
+ * Tries sources in order: icon name → file path → fallback.
+ * The size passed to icon_theme is clamped to MIN(192, MAX(width, height)) so
+ * the theme never has to produce an excessively large icon.
+ * GTK_ICON_LOOKUP_FORCE_SIZE ensures the theme scales to exactly that size.
+ *
+ * Returns: (transfer full) GdkPixbuf*, or NULL if all sources failed.
+ *          Caller must g_object_unref() the result when done.
  */
 GdkPixbuf *
 fb_pixbuf_new(gchar *iname, gchar *fname, int width, int height,
@@ -42,7 +84,21 @@ fb_pixbuf_new(gchar *iname, gchar *fname, int width, int height,
     return pb;
 }
 
-/* Creates hilighted version of front image to reflect mouse enter
+/**
+ * fb_pixbuf_make_back_image - create a hover-highlight pixbuf from a base image.
+ * @front:   Base pixbuf to highlight; may be NULL (returns NULL immediately).
+ * @hicolor: Highlight colour as 0xRRGGBB; each channel is added to the pixel's
+ *           R/G/B values and clamped to 255.  0x000000 produces a no-op copy.
+ *
+ * Creates a new RGBA pixbuf (via gdk_pixbuf_add_alpha) and additively blends
+ * @hicolor into each non-transparent pixel.  The alpha channel is preserved;
+ * fully transparent pixels (A == 0) are skipped.
+ *
+ * On allocation failure (gdk_pixbuf_add_alpha returns NULL), returns @front
+ * with an extra g_object_ref() — the caller still receives a (transfer full)
+ * reference that it must eventually g_object_unref().
+ *
+ * Returns: (transfer full) GdkPixbuf*, or NULL if @front was NULL.
  */
 static GdkPixbuf *
 fb_pixbuf_make_back_image(GdkPixbuf *front, gulong hicolor)
@@ -77,7 +133,31 @@ fb_pixbuf_make_back_image(GdkPixbuf *front, gulong hicolor)
     return back;
 }
 
+/**
+ * PRESS_GAP - pixel inset used to simulate button-press shrink effect.
+ * The press pixbuf is scaled to (W - 2*PRESS_GAP) × (H - 2*PRESS_GAP) and
+ * then composited onto a transparent full-size canvas at offset (PRESS_GAP, PRESS_GAP).
+ */
 #define PRESS_GAP 2
+
+/**
+ * fb_pixbuf_make_press_image - create a pressed-state pixbuf from a highlight image.
+ * @front: Source pixbuf (normally pix[1], the highlight version); may be NULL.
+ *
+ * Creates a pressed-state visual by scaling @front down by PRESS_GAP pixels on
+ * each edge and centring it on a transparent canvas the same size as @front.
+ * This gives the illusion that the icon has been pushed in when clicked.
+ *
+ * Allocation path:
+ *   - gdk_pixbuf_copy(@front) → cleared canvas (transparent)
+ *   - gdk_pixbuf_scale_simple → scaled-down version
+ *   - gdk_pixbuf_copy_area → composited centred into canvas
+ *
+ * On any allocation failure, returns @front with an extra g_object_ref().
+ * If @front is NULL, returns NULL immediately.
+ *
+ * Returns: (transfer full) GdkPixbuf*, or NULL if @front was NULL.
+ */
 static GdkPixbuf *
 fb_pixbuf_make_press_image(GdkPixbuf *front)
 {
@@ -115,7 +195,27 @@ fb_pixbuf_make_press_image(GdkPixbuf *front)
  * FB Image                                                           *
  **********************************************************************/
 
+/** Number of pixbuf slots per image: normal (0), highlight (1), press (2). */
 #define PIXBBUF_NUM 3
+
+/**
+ * fb_image_conf_t - per-instance state attached to a GtkImage via g_object_set_data.
+ *
+ * @iname:   g_strdup() copy of the icon name; g_free()'d in fb_image_free().
+ * @fname:   g_strdup() copy of the file path; g_free()'d in fb_image_free().
+ * @width:   Desired pixel width passed to fb_pixbuf_new().
+ * @height:  Desired pixel height passed to fb_pixbuf_new().
+ * @itc_id:  Signal handler ID for GtkIconTheme::changed; disconnected in
+ *           fb_image_free() before the conf struct is freed.
+ * @hicolor: Hover highlight colour as 0xRRGGBB; 0 disables highlighting.
+ *           Set by fb_button_new() after fb_image_new() returns.
+ * @i:       Index of the currently displayed pixbuf (0/1/2); used to avoid
+ *           redundant gtk_image_set_from_pixbuf() calls.
+ * @pix:     Array of PIXBBUF_NUM (3) GdkPixbuf* refs, each (transfer full).
+ *           pix[0] = normal; pix[1] = highlight; pix[2] = press.
+ *           pix[1] and pix[2] are NULL for plain fb_image_new() images until
+ *           the first icon-theme-changed event (see BUG-008).
+ */
 typedef struct {
     gchar *iname, *fname;
     int width, height;
@@ -129,9 +229,28 @@ static void fb_image_free(GObject *image);
 static void fb_image_icon_theme_changed(GtkIconTheme *icon_theme,
         GtkWidget *image);
 
-/* Creates an image widget from fb_pixbuf and updates it on every icon theme
- * change. To keep its internal state, image allocates some data and frees it
- * in "destroy" callback
+/**
+ * fb_image_new - create a self-updating GtkImage widget.
+ * @iname:  Icon name; passed to fb_pixbuf_new(); may be NULL.
+ * @fname:  File path; passed to fb_pixbuf_new(); may be NULL.
+ * @width:  Desired image width in pixels.
+ * @height: Desired image height in pixels.
+ *
+ * Allocates an fb_image_conf_t (g_new0, exits on OOM) and attaches it to the
+ * GtkImage via g_object_set_data(G_OBJECT(image), "conf", conf).
+ *
+ * Connects two signals:
+ *   - GtkIconTheme::changed → fb_image_icon_theme_changed: rebuilds all pixbufs
+ *     when the user switches icon themes.  Handler ID stored in conf->itc_id and
+ *     disconnected in fb_image_free() to avoid dangling callbacks.
+ *   - GtkWidget::destroy → fb_image_free: frees conf, disconnects the theme
+ *     handler, and unrefs all pixbufs.
+ *
+ * @iname and @fname are g_strdup()'d; the caller need not keep them alive.
+ * gtk_widget_show() is called before return so the image is immediately visible
+ * when added to a container.
+ *
+ * Returns: (transfer full) GtkWidget* (GtkImage).
  */
 GtkWidget *
 fb_image_new(gchar *iname, gchar *fname, int width, int height)
@@ -157,7 +276,16 @@ fb_image_new(gchar *iname, gchar *fname, int width, int height)
 }
 
 
-/* Frees image's resources
+/**
+ * fb_image_free - GtkWidget::destroy handler; frees all fb_image_conf_t resources.
+ * @image: GObject* (GtkImage) being destroyed.
+ *
+ * Disconnects the icon-theme "changed" signal handler (conf->itc_id) from the
+ * global icon_theme singleton, frees conf->iname and conf->fname, unrefs all
+ * non-NULL entries in conf->pix[], then g_free()s the conf struct itself.
+ *
+ * Called automatically when the GtkImage widget is destroyed (either explicitly
+ * or when its parent container is destroyed).
  */
 static void
 fb_image_free(GObject *image)
@@ -176,7 +304,22 @@ fb_image_free(GObject *image)
     return;
 }
 
-/* Reloads image's pixbuf upon icon theme change
+/**
+ * fb_image_icon_theme_changed - GtkIconTheme::changed handler; rebuilds pixbufs.
+ * @icon_theme: The global GtkIconTheme that changed (unused directly; global
+ *              icon_theme is used via fb_pixbuf_new).
+ * @image:      GtkWidget* (GtkImage) whose pixbufs need refreshing.
+ *
+ * Unrefs all three pixbuf slots (setting them to NULL), then rebuilds:
+ *   pix[0] — fresh load from icon name / file path with use_fallback=TRUE
+ *   pix[1] — highlight version via fb_pixbuf_make_back_image
+ *   pix[2] — press version via fb_pixbuf_make_press_image
+ *
+ * Note: pix[1] and pix[2] are always rebuilt, even for plain fb_image_new()
+ * images where hicolor == 0.  In that case the highlight is a no-op alpha copy.
+ * See BUG-008 in docs/BUGS_AND_ISSUES.md.
+ *
+ * Sets the image to display pix[0] (normal state) after rebuilding.
  */
 static void
 fb_image_icon_theme_changed(GtkIconTheme *icon_theme, GtkWidget *image)
@@ -207,11 +350,31 @@ fb_image_icon_theme_changed(GtkIconTheme *icon_theme, GtkWidget *image)
 static gboolean fb_button_cross(GtkImage *widget, GdkEventCrossing *event);
 static gboolean fb_button_pressed(GtkWidget *widget, GdkEventButton *event);
 
-/* Creates fb_button - bgbox with fb_image. bgbox provides pseudo transparent
- * background and event capture. fb_image follows icon theme change.
- * Additionaly, fb_button highlightes an image on mouse enter and runs simple
- * animation when clicked.
- * FIXME: @label parameter is currently ignored
+/**
+ * fb_button_new - create a clickable icon button with hover and press animation.
+ * @iname:   Icon name for the button image; may be NULL.
+ * @fname:   File path for the button image; may be NULL.
+ * @width:   Desired icon width in pixels.
+ * @height:  Desired icon height in pixels.
+ * @hicolor: Hover highlight colour as 0xRRGGBB; 0 = no highlight.
+ * @label:   Currently ignored.  See BUG-009 in docs/BUGS_AND_ISSUES.md.
+ *
+ * Creates a GtkBgbox (has_window=TRUE; pseudo-transparent background) containing
+ * an fb_image_new() child.  After creation, populates pix[1] and pix[2] on the
+ * image's conf struct:
+ *   pix[1] = fb_pixbuf_make_back_image(pix[0], hicolor)  — hover highlight
+ *   pix[2] = fb_pixbuf_make_press_image(pix[1])          — press shrink
+ *
+ * Event connections on the GtkBgbox (using g_signal_connect_swapped so the
+ * GtkImage pointer is passed to the callbacks):
+ *   enter-notify-event  → fb_button_cross (displays pix[1])
+ *   leave-notify-event  → fb_button_cross (displays pix[0])
+ *   button-press-event  → fb_button_pressed (displays pix[2])
+ *   button-release-event→ fb_button_pressed (displays pix[1] or pix[0])
+ *
+ * gtk_widget_show_all() is called before return.
+ *
+ * Returns: (transfer full) GtkWidget* (GtkBgbox containing a GtkImage).
  */
 GtkWidget *
 fb_button_new(gchar *iname, gchar *fname, int width, int height,
@@ -245,8 +408,18 @@ fb_button_new(gchar *iname, gchar *fname, int width, int height,
 }
 
 
-/* Flips front and back images upon mouse cross event - GDK_ENTER_NOTIFY
- * or GDK_LEAVE_NOTIFY
+/**
+ * fb_button_cross - enter/leave-notify handler; swaps the displayed pixbuf.
+ * @widget: GtkImage* (swapped from GtkBgbox via g_signal_connect_swapped).
+ * @event:  GDK crossing event from the GtkBgbox.
+ *
+ * On GDK_ENTER_NOTIFY: switches to pix[1] (highlight).
+ * On GDK_LEAVE_NOTIFY: switches to pix[0] (normal).
+ *
+ * Uses conf->i to avoid redundant gtk_image_set_from_pixbuf() calls when the
+ * image is already in the target state.
+ *
+ * Returns: TRUE — event is consumed and does not propagate further.
  */
 static gboolean
 fb_button_cross(GtkImage *widget, GdkEventCrossing *event)
@@ -270,6 +443,21 @@ fb_button_cross(GtkImage *widget, GdkEventCrossing *event)
     return TRUE;
 }
 
+/**
+ * fb_button_pressed - button-press/release handler; shows press or hover pixbuf.
+ * @widget: GtkImage* (swapped from GtkBgbox via g_signal_connect_swapped).
+ * @event:  GDK button event from the GtkBgbox.
+ *
+ * On GDK_BUTTON_PRESS: switches to pix[2] (press / shrunk icon).
+ * On GDK_BUTTON_RELEASE: if the pointer is still within the widget bounds,
+ *   switches to pix[1] (highlight); otherwise switches to pix[0] (normal).
+ *   Bounds check uses the GtkImage widget allocation, not the GtkBgbox, because
+ *   the event coordinates are relative to the GtkBgbox window.
+ *
+ * Uses conf->i to suppress redundant gtk_image_set_from_pixbuf() calls.
+ *
+ * Returns: FALSE — event propagates to the plugin's own button-press handler.
+ */
 static gboolean
 fb_button_pressed(GtkWidget *widget, GdkEventButton *event)
 {
@@ -300,6 +488,27 @@ fb_button_pressed(GtkWidget *widget, GdkEventButton *event)
  * FB Calendar                                                        *
  **********************************************************************/
 
+/**
+ * fb_create_calendar - create a floating calendar popup window.
+ *
+ * Creates a borderless, non-resizable GTK_WINDOW_TOPLEVEL with a GtkCalendar
+ * child.  Window properties:
+ *   - No decorations (gtk_window_set_decorated FALSE)
+ *   - 180×180 default size; not resizable
+ *   - 5 px border width around the calendar
+ *   - Excluded from taskbar and pager hint lists
+ *   - Positioned at the mouse cursor (GTK_WIN_POS_MOUSE)
+ *   - Title "calendar" (used by some WMs for identification)
+ *   - Sticky (gtk_window_stick — visible on all virtual desktops)
+ *
+ * Calendar display options: week numbers, day names, and heading are shown.
+ *
+ * The caller is responsible for:
+ *   - Calling gtk_widget_show_all() to make the window visible
+ *   - Calling gtk_widget_destroy() when the calendar is dismissed
+ *
+ * Returns: (transfer full) GtkWidget* (GtkWindow containing a GtkCalendar).
+ */
 GtkWidget *
 fb_create_calendar(void)
 {

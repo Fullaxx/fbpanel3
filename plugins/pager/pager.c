@@ -1,3 +1,70 @@
+/**
+ * @file pager.c
+ * @brief Pager plugin — thumbnail view of virtual desktops.
+ *
+ * Displays a row (or column) of miniature desktop representations, each showing
+ * the current desktop background colour and scaled rectangles for every managed
+ * window.  Clicking a thumbnail switches the active desktop.
+ *
+ * DATA STRUCTURES
+ * ---------------
+ * - struct task   — per-window state (position, desktop, icon pixbuf, GDK filter)
+ * - struct desk   — per-desktop state (GtkDrawingArea, cairo backing surface,
+ *                   wallpaper surface, scale factors)
+ * - struct pager_priv — plugin private state (desk array, task hash table, config)
+ *
+ * DRAWING PIPELINE
+ * ----------------
+ * Each desk has an off-screen cairo_image_surface_t `pix` (RGB24) that is used
+ * as a backing buffer.  When a window changes position, desktop, or state,
+ * the affected desk(s) are marked dirty.  The next GDK "draw" signal on the
+ * GtkDrawingArea triggers desk_draw_event(), which:
+ *   1. Calls desk_clear_pixmap() — fills pix with the background colour
+ *      (or copies the wallpaper cache gpix).
+ *   2. Iterates pg->wins[] in stacking order, calling task_update_pix() for
+ *      each task on this desktop.
+ *   3. Blits d->pix to the cairo_t provided by GDK.
+ *
+ * TASK LIFECYCLE
+ * --------------
+ * do_net_client_list_stacking() rebuilds the task set on every
+ * EV_CLIENT_LIST_STACKING event (two-pass stale removal):
+ *   - For known windows: increment refcount, update stacking index.
+ *   - For new windows: allocate task, install per-window GDK filter,
+ *     query desktop/state/geometry/icon.
+ *   - task_remove_stale() called via g_hash_table_foreach_remove():
+ *     deletes tasks whose refcount was 0 before the increment step.
+ *     Note: BUG-023 — task_remove_stale does NOT free t->pixbuf.
+ *
+ * GDK FILTER
+ * ----------
+ * pager_event_filter() is installed on each task's GdkWindow (via
+ * gdk_window_add_filter).  It handles PropertyNotify (NET_WM_STATE,
+ * NET_WM_DESKTOP) and ConfigureNotify (window moves/resizes), marking the
+ * relevant desk(s) dirty.  The filter is removed and gdkwin unreffed in
+ * task_remove_stale() / task_remove_all().
+ *
+ * WALLPAPER
+ * ---------
+ * The wallpaper feature (config: showwallpaper) allocates a FbBg reference and
+ * a per-desk gpix surface.  desk_draw_bg() is currently a no-op stub (GTK3 port
+ * incomplete), so the wallpaper code path fills pix from gpix, but gpix itself
+ * is always blank.  The feature is effectively non-functional but harmless.
+ *
+ * KNOWN ISSUES
+ * ------------
+ * BUG-018: task::name and task::iname fields are declared but never written or
+ *          freed; they are permanently NULL.
+ * BUG-019: scalew/scaleh naming is swapped relative to conventional meaning
+ *          (scalew = desk_h/screen_h, scaleh = desk_w/screen_w); harmless
+ *          because values are equal when the desk aspect ratio is correct.
+ * BUG-020: pg->gen_pixbuf is not g_object_unref'd in pager_destructor.
+ * BUG-021: pager_priv::dirty field is declared but never read or written.
+ * BUG-022: desk::first is set in desk_new() but never read.
+ * BUG-023: task_remove_stale() does not free t->pixbuf; leaks one GdkPixbuf
+ *          per task removed during normal operation.
+ */
+
 /* pager.c -- pager module of fbpanel project
  *
  * Copyright (C) 2002-2003 Anatoly Asviyan <aanatoly@users.sf.net>
@@ -44,57 +111,115 @@
 
 
 
-/* managed window: all related info that wm holds about its managed windows */
+/**
+ * task - per-managed-window state for the pager.
+ *
+ * Created in do_net_client_list_stacking() when a new window appears in
+ * _NET_CLIENT_LIST_STACKING.  Destroyed by task_remove_stale() (normal
+ * operation) or task_remove_all() (destructor).
+ *
+ * The task struct is stored in the hash table keyed by &task::win.  Because
+ * the key pointer points INTO the struct, the key is always valid for the
+ * lifetime of the task.
+ */
 typedef struct _task {
-    Window win;
-    GdkWindow *gdkwin;          /* GDK wrapper for win; used for per-window event filter */
-    int x, y;
-    guint w, h;
-    gint refcount;
-    guint stacking;
-    guint desktop;
-    char *name, *iname;
-    net_wm_state nws;
-    net_wm_window_type nwwt;
-    GdkPixbuf *pixbuf;
-    unsigned int using_netwm_icon:1;
+    Window win;             /**< X11 window ID; used as hash table key via &win. */
+    GdkWindow *gdkwin;      /**< GDK wrapper for win; holds pager_event_filter.
+                             *   g_object_unref'd in task_remove_stale/task_remove_all.
+                             *   NULL for fbpanel's own windows (FBPANEL_WIN check). */
+    int x, y;               /**< Window position on screen (root-relative, pixels). */
+    guint w, h;             /**< Window dimensions on screen (pixels). */
+    gint refcount;          /**< Stale-removal counter; see do_net_client_list_stacking. */
+    guint stacking;         /**< Position in _NET_CLIENT_LIST_STACKING (z-order index). */
+    guint desktop;          /**< Desktop number this window lives on (from _NET_WM_DESKTOP). */
+    char *name, *iname;     /**< NOTE: declared but never written; always NULL. (BUG-018) */
+    net_wm_state nws;       /**< Parsed _NET_WM_STATE flags (hidden, shaded, skip_pager). */
+    net_wm_window_type nwwt;/**< Parsed _NET_WM_WINDOW_TYPE flags (desktop, dock, etc). */
+    GdkPixbuf *pixbuf;      /**< Task icon (16x16); (transfer full); may be NULL.
+                             *   NOT freed by task_remove_stale (BUG-023);
+                             *   freed by task_remove_all at destructor time. */
+    unsigned int using_netwm_icon:1; /**< TRUE if pixbuf came from _NET_WM_ICON. */
 } task;
 
 typedef struct _desk   desk;
 typedef struct _pager_priv  pager_priv;
 
+/** Maximum number of virtual desktops the pager supports. */
 #define MAX_DESK_NUM   20
-/* map of a desktop */
+
+/**
+ * desk - per-virtual-desktop thumbnail state.
+ *
+ * Created by desk_new(); destroyed by desk_free().
+ * Owns the GtkDrawingArea `da` (added to pg->box), the off-screen backing
+ * surface `pix`, and the wallpaper cache `gpix`.
+ */
 struct _desk {
-    GtkWidget *da;
-    Pixmap xpix;
-    cairo_surface_t *gpix;
-    cairo_surface_t *pix;
-    guint no, dirty, first;
-    gfloat scalew, scaleh;
-    pager_priv *pg;
+    GtkWidget *da;          /**< GtkDrawingArea for this desktop thumbnail.
+                             *   Owned by the GTK container pg->box;
+                             *   gtk_widget_destroy'd in desk_free(). */
+    Pixmap xpix;            /**< X11 Pixmap for wallpaper (stub; never assigned). */
+    cairo_surface_t *gpix;  /**< Wallpaper cache surface (CAIRO_FORMAT_RGB24, desk size).
+                             *   Allocated in desk_configure_event when pg->wallpaper.
+                             *   cairo_surface_destroy'd in desk_configure_event (resize)
+                             *   and desk_free(). desk_draw_bg() is currently a no-op. */
+    cairo_surface_t *pix;   /**< Off-screen backing buffer (CAIRO_FORMAT_RGB24, desk size).
+                             *   Rebuilt on configure_event; blitted to GDK in draw event.
+                             *   cairo_surface_destroy'd in desk_configure_event and desk_free(). */
+    guint no;               /**< Desktop number (0-based index). */
+    guint dirty;            /**< Non-zero: backing surface needs redraw before next paint. */
+    guint first;            /**< Set to 1 in desk_new(); never read. (BUG-022) */
+    gfloat scalew;          /**< Scale from screen height to desk height (desk_h/screen_h).
+                             *   Used to scale task x-pos and width. Naming is swapped
+                             *   vs conventional (BUG-019); values are equal for a
+                             *   correctly-proportioned desk widget. */
+    gfloat scaleh;          /**< Scale from screen width to desk width (desk_w/screen_w).
+                             *   Used to scale task y-pos and height. (BUG-019) */
+    pager_priv *pg;         /**< Back-pointer to owning pager instance. */
 };
 
+/**
+ * pager_priv - pager plugin private state.
+ *
+ * Embedded as the first field of the plugin allocation (plugin_instance plugin
+ * is first so casting between plugin_instance* and pager_priv* is safe).
+ */
 struct _pager_priv {
-    plugin_instance plugin;
-    GtkWidget *box;
-    desk *desks[MAX_DESK_NUM];
-    guint desknum;
-    guint curdesk;
-    gint wallpaper;
-    //int dw, dh;
-    gfloat /*scalex, scaley, */ratio;
-    Window *wins;
-    int winnum, dirty;
-    GHashTable* htable;
-    task *focusedtask;
-    FbBg *fbbg;
-    gint dah, daw;
-    GdkPixbuf *gen_pixbuf;
+    plugin_instance plugin;         /**< Must be first; plugin framework accesses this. */
+    GtkWidget *box;                 /**< Horizontal or vertical GtkBox holding desk widgets;
+                                     *   owned by plug->pwid container. */
+    desk *desks[MAX_DESK_NUM];      /**< Array of desk pointers; [0..desknum-1] are valid. */
+    guint desknum;                  /**< Number of virtual desktops (from _NET_NUMBER_OF_DESKTOPS). */
+    guint curdesk;                  /**< Current desktop index (from _NET_CURRENT_DESKTOP). */
+    gint wallpaper;                 /**< Config: show wallpaper thumbnails (showwallpaper). */
+    gfloat ratio;                   /**< Monitor aspect ratio (width/height); used to size desks. */
+    Window *wins;                   /**< (transfer full, XFree) _NET_CLIENT_LIST_STACKING array.
+                                     *   Updated on every EV_CLIENT_LIST_STACKING event. */
+    int winnum;                     /**< Number of entries in wins[]. */
+    int dirty;                      /**< Declared but never used. (BUG-021) */
+    GHashTable* htable;             /**< Window -> task* map; key is &task::win (pointer
+                                     *   into task struct; stable for task lifetime). */
+    task *focusedtask;              /**< Weak pointer to the currently focused task (from
+                                     *   _NET_ACTIVE_WINDOW); NULL if no focus or task gone.
+                                     *   NULL'd by task_remove_stale when the task is removed. */
+    FbBg *fbbg;                     /**< FbBg singleton ref; (transfer full, g_object_unref).
+                                     *   Only acquired when pg->wallpaper is TRUE. */
+    gint dah, daw;                  /**< Desk area height and width (pixels); computed from
+                                     *   panel dimensions and monitor aspect ratio. */
+    GdkPixbuf *gen_pixbuf;          /**< Default icon used for tasks without icons (transfer full).
+                                     *   Loaded from default.xpm at construction.
+                                     *   NOT freed in pager_destructor (BUG-020). */
 };
 
 
 
+/**
+ * TASK_VISIBLE - test whether a task should be drawn in the pager.
+ * @tk: Pointer to a task struct.
+ *
+ * Returns false (task hidden from pager) when the task has the hidden or
+ * skip_pager NET_WM_STATE flags set.
+ */
 #define TASK_VISIBLE(tk)                            \
  (!( (tk)->nws.hidden || (tk)->nws.skip_pager ))
 
@@ -102,19 +227,12 @@ struct _pager_priv {
 static void pager_rebuild_all(FbEv *ev, pager_priv *pg);
 static void desk_draw_bg(pager_priv *pg, desk *d1);
 static GdkFilterReturn pager_event_filter(XEvent *, GdkEvent *, pager_priv *);
-//static void pager_paint_frame(pager_priv *pg, gint no, GtkStateType state);
 
 static void pager_destructor(plugin_instance *p);
 
 static inline void desk_set_dirty_by_win(pager_priv *p, task *t);
 static inline void desk_set_dirty(desk *d);
 static inline void desk_set_dirty_all(pager_priv *pg);
-
-/*
-static void desk_clear_pixmap(desk *d);
-static gboolean task_remove_stale(Window *win, task *t, pager_priv *p);
-static gboolean task_remove_all(Window *win, task *t, pager_priv *p);
-*/
 
 #ifdef EXTRA_DEBUG
 static pager_priv *cp;
@@ -143,8 +261,22 @@ sig_usr(int signum)
  * Task Management Routines                                      *
  *****************************************************************/
 
-
-/* tell to remove element with zero refcount */
+/**
+ * task_remove_stale - GHRFunc: remove tasks that were not seen in the last
+ *                     _NET_CLIENT_LIST_STACKING scan.
+ * @win: Hash table key (pointer to Window; unused). (transfer none)
+ * @t:   Task to evaluate. (transfer none)
+ * @p:   Owning pager instance. (transfer none)
+ *
+ * Called via g_hash_table_foreach_remove() after incrementing refcount for
+ * all windows currently in _NET_CLIENT_LIST_STACKING.  A task with refcount==0
+ * before the increment (now 0 after post-decrement) was absent from the list
+ * and is removed.
+ *
+ * Note: does NOT free t->pixbuf (BUG-023).
+ *
+ * Returns: TRUE to remove and free the hash entry; FALSE to keep.
+ */
 static gboolean
 task_remove_stale(Window *win, task *t, pager_priv *p)
 {
@@ -164,7 +296,18 @@ task_remove_stale(Window *win, task *t, pager_priv *p)
     return FALSE;
 }
 
-/* tell to remove element with zero refcount */
+/**
+ * task_remove_all - GHRFunc: unconditionally remove and free a task.
+ * @win: Hash table key (pointer to Window; unused). (transfer none)
+ * @t:   Task to free. (transfer none)
+ * @p:   Owning pager instance. (transfer none)
+ *
+ * Called via g_hash_table_foreach_remove() during pager_destructor() and
+ * pager_rebuild_all() (after desk count change).  Removes the per-window
+ * GDK filter, unrefs gdkwin, and frees t->pixbuf if set.
+ *
+ * Returns: TRUE always (remove all).
+ */
 static gboolean
 task_remove_all(Window *win, task *t, pager_priv *p)
 {
@@ -180,6 +323,16 @@ task_remove_all(Window *win, task *t, pager_priv *p)
 }
 
 
+/**
+ * task_get_sizepos - query and update a task's on-screen position and size.
+ * @t: Task to update. (transfer none)
+ *
+ * Tries XGetWindowAttributes() first (gives root-relative position via
+ * XTranslateCoordinates).  Falls back to XGetGeometry() for unmapped/reparented
+ * windows.  As a last resort, sets all dimensions to 2.
+ *
+ * Updates t->x, t->y, t->w, t->h.
+ */
 static void
 task_get_sizepos(task *t)
 {
@@ -209,6 +362,29 @@ task_get_sizepos(task *t)
 }
 
 
+/**
+ * task_update_pix - draw one task's scaled rectangle into a desk's backing surface.
+ * @t: Task to draw. (transfer none)
+ * @d: Desk whose pix surface to draw into. (transfer none)
+ *
+ * Skips tasks that are:
+ *  - not TASK_VISIBLE (hidden or skip_pager)
+ *  - on a different desktop than d->no (unless desktop > desknum, shown on all)
+ *  - too small after scaling (w<3 or h<3 pixels)
+ *
+ * Draws onto d->pix:
+ *  1. Filled rectangle in the GTK SELECTED background colour (focused task) or
+ *     NORMAL background colour (unfocused).
+ *  2. Outlined rectangle in the corresponding foreground colour.
+ *  3. If the scaled rectangle is at least 10x10: draws t->pixbuf (or
+ *     pg->gen_pixbuf as fallback) centred within the rectangle, scaling the
+ *     icon down if the rectangle is smaller than 18x18.
+ *
+ * For shaded windows, height is clamped to 3 pixels.
+ *
+ * Note: BUG-019 — scalew and scaleh names are swapped vs conventional usage,
+ * but values are equal for a correctly-proportioned desk, so rendering is correct.
+ */
 static void
 task_update_pix(task *t, desk *d)
 {
@@ -307,6 +483,23 @@ task_update_pix(task *t, desk *d)
 /*****************************************************************
  * Desk Functions                                                *
  *****************************************************************/
+
+/**
+ * desk_clear_pixmap - fill a desk's backing surface with the background.
+ * @d: Desk to clear. (transfer none)
+ *
+ * If d->pix is NULL (not yet allocated), returns immediately.
+ *
+ * When pg->wallpaper is TRUE and d->xpix != None:
+ *   Copies gpix (wallpaper cache) to pix.  Then if this is the current
+ *   desktop, draws a SELECTED-colour border around the thumbnail.
+ *
+ * When pg->wallpaper is FALSE (or xpix is None):
+ *   Fills pix with SELECTED background colour for the current desktop,
+ *   NORMAL background colour for all others.
+ *
+ * Note: desk_draw_bg() is a no-op in the GTK3 port, so gpix is always blank.
+ */
 static void
 desk_clear_pixmap(desk *d)
 {
@@ -360,6 +553,14 @@ desk_clear_pixmap(desk *d)
 }
 
 
+/**
+ * desk_draw_bg - render the desktop wallpaper into a desk's gpix surface.
+ * @pg: Pager instance. (transfer none)
+ * @d1: Desk to update. (transfer none)
+ *
+ * STUB: wallpaper rendering is not implemented in the GTK3 port.
+ * Returns immediately.
+ */
 static void
 desk_draw_bg(pager_priv *pg, desk *d1)
 {
@@ -369,6 +570,10 @@ desk_draw_bg(pager_priv *pg, desk *d1)
 
 
 
+/**
+ * desk_set_dirty - mark a desk as needing a redraw and queue a GDK draw.
+ * @d: Desk to mark dirty. (transfer none)
+ */
 static inline void
 desk_set_dirty(desk *d)
 {
@@ -377,6 +582,10 @@ desk_set_dirty(desk *d)
     return;
 }
 
+/**
+ * desk_set_dirty_all - mark every desk dirty and queue redraws.
+ * @pg: Pager instance. (transfer none)
+ */
 static inline void
 desk_set_dirty_all(pager_priv *pg)
 {
@@ -386,6 +595,15 @@ desk_set_dirty_all(pager_priv *pg)
     return;
 }
 
+/**
+ * desk_set_dirty_by_win - mark the desk(s) affected by a task change as dirty.
+ * @p: Pager instance. (transfer none)
+ * @t: Task that changed. (transfer none)
+ *
+ * Skips tasks with skip_pager or _NET_WM_WINDOW_TYPE_DESKTOP set.
+ * Marks t->desktop if it is a valid desktop index; otherwise marks all desks
+ * (for sticky windows where desktop >= desknum).
+ */
 static inline void
 desk_set_dirty_by_win(pager_priv *p, task *t)
 {
@@ -398,7 +616,19 @@ desk_set_dirty_by_win(pager_priv *p, task *t)
     return;
 }
 
-/* Redraw the screen from the backing pixmap */
+/**
+ * desk_draw_event - GDK "draw" signal handler for a desk's GtkDrawingArea.
+ * @widget: The GtkDrawingArea. (transfer none)
+ * @cr:     Cairo context provided by GDK for this draw cycle. (transfer none)
+ * @d:      The desk this drawing area belongs to. (transfer none)
+ *
+ * If d->dirty: clears the backing surface (desk_clear_pixmap), then calls
+ * task_update_pix() for every window in pg->wins[] in stacking order.
+ *
+ * Blits d->pix onto cr via cairo_set_source_surface + cairo_paint.
+ *
+ * Returns FALSE (allow further signal handlers; GTK convention for draw).
+ */
 static gint
 desk_draw_event (GtkWidget *widget, cairo_t *cr, desk *d)
 {
@@ -425,7 +655,23 @@ desk_draw_event (GtkWidget *widget, cairo_t *cr, desk *d)
 }
 
 
-/* Upon realize and every resize creates a new backing pixmap of the appropriate size */
+/**
+ * desk_configure_event - GDK "configure_event" handler; reallocates backing surfaces.
+ * @widget: The GtkDrawingArea. (transfer none)
+ * @event:  Configure event (contains new size). (transfer none)
+ * @d:      The desk. (transfer none)
+ *
+ * Destroys old d->pix (and d->gpix if wallpaper enabled) and creates new ones
+ * sized to the widget's current allocation.
+ *
+ * Recomputes d->scalew and d->scaleh from the primary monitor geometry:
+ *   scalew = alloc.height / monitor_height   (scale for x/width)
+ *   scaleh = alloc.width  / monitor_width    (scale for y/height)
+ * The naming appears swapped vs convention but the values are equal for a
+ * correctly-proportioned desk, so rendering is unaffected (BUG-019).
+ *
+ * Returns FALSE.
+ */
 static gint
 desk_configure_event (GtkWidget *widget, GdkEventConfigure *event, desk *d)
 {
@@ -457,6 +703,16 @@ desk_configure_event (GtkWidget *widget, GdkEventConfigure *event, desk *d)
     return FALSE;
 }
 
+/**
+ * desk_button_press_event - GDK "button_press_event" handler for a desk thumbnail.
+ * @widget: The GtkDrawingArea. (transfer none)
+ * @event:  Button press event. (transfer none)
+ * @d:      The desk. (transfer none)
+ *
+ * Ctrl+RMB: passes through (returns FALSE) for the panel's right-click menu.
+ * Any other button press: sends _NET_CURRENT_DESKTOP ClientMessage to switch
+ * to this desktop, returns TRUE (event consumed).
+ */
 static gint
 desk_button_press_event(GtkWidget * widget, GdkEventButton * event, desk *d)
 {
@@ -469,6 +725,15 @@ desk_button_press_event(GtkWidget * widget, GdkEventButton * event, desk *d)
     return TRUE;
 }
 
+/**
+ * desk_new - allocate and initialise a new desk for desktop index @i.
+ * @pg: Pager instance. (transfer none)
+ * @i:  Desktop index (must be < pg->desknum).
+ *
+ * Allocates pg->desks[i], creates a GtkDrawingArea sized daw x dah,
+ * packs it into pg->box, and connects "draw", "configure_event", and
+ * "button_press_event" signals.
+ */
 static void
 desk_new(pager_priv *pg, int i)
 {
@@ -479,7 +744,7 @@ desk_new(pager_priv *pg, int i)
     d->pg = pg;
     d->pix = NULL;
     d->dirty = 0;
-    d->first = 1;
+    d->first = 1;   /* set but never read (BUG-022) */
     d->no = i;
 
     d->da = gtk_drawing_area_new();
@@ -498,6 +763,15 @@ desk_new(pager_priv *pg, int i)
     return;
 }
 
+/**
+ * desk_free - destroy a desk and free all its resources.
+ * @pg: Pager instance. (transfer none)
+ * @i:  Desktop index to free.
+ *
+ * Destroys d->pix and d->gpix (cairo surfaces), calls gtk_widget_destroy on
+ * d->da, then g_free's the desk struct.  Clears pg->desks[i] indirectly
+ * (caller is responsible for not accessing it after this).
+ */
 static void
 desk_free(pager_priv *pg, int i)
 {
@@ -520,6 +794,25 @@ desk_free(pager_priv *pg, int i)
  * Stuff to grab icons from windows - ripped from taskbar.c      *
  *****************************************************************/
 
+/**
+ * _wnck_gdk_pixbuf_get_from_pixmap - convert an X11 Pixmap to a GdkPixbuf.
+ * @dest:     Ignored (pass NULL). Kept for API compatibility.
+ * @xpixmap:  X11 Pixmap ID to read. (transfer none)
+ * @src_x:    Source X offset within the pixmap.
+ * @src_y:    Source Y offset within the pixmap.
+ * @dest_x:   Ignored.
+ * @dest_y:   Ignored.
+ * @width:    Width of the region to extract (pixels).
+ * @height:   Height of the region to extract (pixels).
+ *
+ * Uses cairo-xlib to copy the pixmap into an RGB24 image surface, then
+ * calls gdk_pixbuf_get_from_surface() to produce a GdkPixbuf.
+ *
+ * Handles 1-bit bitmaps (icon masks): renders white-on-black so that
+ * apply_mask() can use pixel value 0 as transparent, 255 as opaque.
+ *
+ * Returns: (transfer full) new GdkPixbuf, or NULL on X11 / cairo failure.
+ */
 static GdkPixbuf*
 _wnck_gdk_pixbuf_get_from_pixmap (GdkPixbuf   *dest,
                                   Pixmap       xpixmap,
@@ -588,6 +881,16 @@ _wnck_gdk_pixbuf_get_from_pixmap (GdkPixbuf   *dest,
     return ret;
 }
 
+/**
+ * apply_mask - composite a 1-bit mask into a GdkPixbuf's alpha channel.
+ * @pixbuf: Source RGB pixbuf. (transfer none)
+ * @mask:   Mask pixbuf (from _wnck_gdk_pixbuf_get_from_pixmap on a 1-bit bitmap).
+ *          Pixels with value 0 become transparent; non-zero become opaque.
+ *          (transfer none)
+ *
+ * Returns: (transfer full) new RGBA GdkPixbuf with alpha channel set from @mask.
+ *          Caller must g_object_unref the result and the input pixbufs separately.
+ */
 static GdkPixbuf*
 apply_mask (GdkPixbuf *pixbuf,
             GdkPixbuf *mask)
@@ -637,6 +940,11 @@ apply_mask (GdkPixbuf *pixbuf,
   return with_alpha;
 }
 
+/**
+ * free_pixels - GdkPixbuf destroy notify to free a g_new'd pixel buffer.
+ * @pixels: Pixel data to free. (transfer full)
+ * @data:   Unused user data.
+ */
 static void
 free_pixels (guchar *pixels, gpointer data)
 {
@@ -644,6 +952,18 @@ free_pixels (guchar *pixels, gpointer data)
     return;
 }
 
+/**
+ * argbdata_to_pixdata - convert ARGB gulong array to packed RGBA bytes.
+ * @argb_data: Array of @len ARGB values (as returned by XGetWindowProperty
+ *             with XA_CARDINAL type). (transfer none)
+ * @len:       Number of ARGB entries.
+ *
+ * Converts each entry: `rgba = (argb << 8) | (argb >> 24)`, then unpacks
+ * RGBA bytes in order: R, G, B, A.
+ *
+ * Returns: (transfer full) newly g_new'd byte array of length len*4;
+ *          must be freed by the GdkPixbuf destroy-notify (free_pixels).
+ */
 static guchar *
 argbdata_to_pixdata (gulong *argb_data, int len)
 {
@@ -658,10 +978,10 @@ argbdata_to_pixdata (gulong *argb_data, int len)
     while (i < len) {
         guint32 argb;
         guint32 rgba;
-      
+
         argb = argb_data[i];
         rgba = (argb << 8) | (argb >> 24);
-      
+
         *p = rgba >> 24;
         ++p;
         *p = (rgba >> 16) & 0xff;
@@ -670,12 +990,25 @@ argbdata_to_pixdata (gulong *argb_data, int len)
         ++p;
         *p = rgba & 0xff;
         ++p;
-      
+
         ++i;
     }
     return ret;
 }
 
+/**
+ * get_netwm_icon - load a task icon from _NET_WM_ICON (ARGB format).
+ * @tkwin: X11 window to query. (transfer none)
+ * @iw:    Desired icon width.
+ * @ih:    Desired icon height.
+ *
+ * Reads XA_CARDINAL _NET_WM_ICON property, validates dimensions are in
+ * [16, 256] range, converts ARGB to RGBA via argbdata_to_pixdata, creates a
+ * GdkPixbuf, and scales to iw x ih if needed.
+ *
+ * Returns: (transfer full) new GdkPixbuf scaled to iw x ih, or NULL on failure.
+ *          Data array freed by XFree regardless of outcome.
+ */
 static GdkPixbuf *
 get_netwm_icon(Window tkwin, int iw, int ih)
 {
@@ -690,33 +1023,6 @@ get_netwm_icon(Window tkwin, int iw, int ih)
     if (!data)
         return NULL;
 
-    /* loop through all icons in data to find best fit */
-    if (0) {
-        gulong *tmp;
-        int len;
-        
-        len = n/sizeof(gulong);
-        tmp = data;
-        while (len > 2) {
-            int size = tmp[0] * tmp[1];
-            DBG("sub-icon: %dx%d %d bytes\n", tmp[0], tmp[1], size * 4);
-            len -= size + 2;
-            tmp += size;
-        }
-    }
-
-    if (0) {
-        int i, j, nn;
-    
-        nn = MIN(10, n);
-        p = (guchar *) data;
-        for (i = 0; i < nn; i++) {
-            for (j = 0; j < sizeof(gulong); j++)
-                ERR("%02x ", (guint) p[i*sizeof(gulong) + j]);
-            ERR("\n");
-        }
-    }
-    
     /* check that data indeed represents icon in w + h + ARGB[] format
      * with 16x16 dimension at least */
     if (n < (16 * 16 + 1 + 1)) {
@@ -731,7 +1037,7 @@ get_netwm_icon(Window tkwin, int iw, int ih)
             tkwin, w, h);
         goto out;
     }
-    
+
     DBG("orig  %dx%d dest %dx%d\n", w, h, iw, ih);
     p = argbdata_to_pixdata(data + 2, w * h);
     if (!p)
@@ -751,6 +1057,20 @@ out:
     return ret;
 }
 
+/**
+ * get_wm_icon - load a task icon from WM_HINTS (X11 Pixmap path).
+ * @tkwin: X11 window to query. (transfer none)
+ * @iw:    Desired icon width.
+ * @ih:    Desired icon height.
+ *
+ * Reads XGetWMHints; if IconPixmapHint is set, converts the X11 Pixmap to
+ * a GdkPixbuf via _wnck_gdk_pixbuf_get_from_pixmap + cairo-xlib.  If
+ * IconMaskHint is also set, composites the mask via apply_mask().
+ * Scales the result to iw x ih using GDK_INTERP_TILES.
+ *
+ * Returns: (transfer full) new GdkPixbuf scaled to iw x ih, or NULL on failure.
+ *          Intermediate pixbufs are g_object_unref'd before returning.
+ */
 static GdkPixbuf*
 get_wm_icon(Window tkwin, int iw, int ih)
 {
@@ -809,6 +1129,17 @@ get_wm_icon(Window tkwin, int iw, int ih)
  * Netwm/WM Interclient Communication                            *
  *****************************************************************/
 
+/**
+ * do_net_active_window - FbEv "active_window" signal handler.
+ * @ev: FbEv instance (unused). (transfer none)
+ * @p:  Pager instance. (transfer none)
+ *
+ * Reads _NET_ACTIVE_WINDOW from the root window.  Updates p->focusedtask
+ * and marks the previously- and newly-focused desks dirty so they repaint
+ * with the correct highlight colour.
+ *
+ * The data pointer from get_xaproperty is XFree'd after hash lookup.
+ */
 static void
 do_net_active_window(FbEv *ev, pager_priv *p)
 {
@@ -836,6 +1167,15 @@ do_net_active_window(FbEv *ev, pager_priv *p)
     return;
 }
 
+/**
+ * do_net_current_desktop - FbEv "current_desktop" signal handler.
+ * @ev: FbEv instance (may be NULL when called from pager_rebuild_all). (transfer none)
+ * @pg: Pager instance. (transfer none)
+ *
+ * Updates pg->curdesk and marks old and new current-desktop desk thumbnails
+ * dirty; also updates the GtkStateFlags (SELECTED vs NORMAL) on the drawing
+ * areas so CSS-based styling reflects the active desktop.
+ */
 static void
 do_net_current_desktop(FbEv *ev, pager_priv *pg)
 {
@@ -850,6 +1190,24 @@ do_net_current_desktop(FbEv *ev, pager_priv *pg)
 }
 
 
+/**
+ * do_net_client_list_stacking - FbEv "client_list_stacking" signal handler.
+ * @ev: FbEv instance (may be NULL when called from pager_rebuild_all). (transfer none)
+ * @p:  Pager instance. (transfer none)
+ *
+ * Refreshes the task set from _NET_CLIENT_LIST_STACKING.  Uses a two-pass
+ * stale-removal approach (same as taskbar):
+ *
+ *   Pass 1 — for each window in the new list:
+ *     - Known task: increment refcount; update stacking index if changed.
+ *     - New task: allocate, set refcount=1, query desktop/state/geometry/icon,
+ *       install pager_event_filter on gdkwin.
+ *
+ *   Pass 2 — g_hash_table_foreach_remove(task_remove_stale):
+ *     tasks whose refcount was 0 before pass 1 are removed.
+ *
+ * pg->wins is XFree'd and replaced on each call.
+ */
 static void
 do_net_client_list_stacking(FbEv *ev, pager_priv *p)
 {
@@ -887,6 +1245,7 @@ do_net_client_list_stacking(FbEv *ev, pager_priv *p)
             get_net_wm_state(t->win, &t->nws);
             get_net_wm_window_type(t->win, &t->nwwt);
             task_get_sizepos(t);
+            /* Icon loading: try _NET_WM_ICON first, fall back to WM_HINTS pixmap. */
             t->pixbuf = get_netwm_icon(t->win, 16, 16);
             t->using_netwm_icon = (t->pixbuf != NULL);
             if (!t->using_netwm_icon) {
@@ -906,21 +1265,15 @@ do_net_client_list_stacking(FbEv *ev, pager_priv *p)
 /*****************************************************************
  * Pager Functions                                               *
  *****************************************************************/
-/*
-static void
-pager_unmapnotify(pager_priv *p, XEvent *ev)
-{
-    Window win = ev->xunmap.window;
-    task *t;
-    if (!(t = g_hash_table_lookup(p->htable, &win)))
-        return;
-    DBG("pager_unmapnotify: win=0x%x\n", win);
-    return;
-    t->ws = WithdrawnState;
-    desk_set_dirty_by_win(p, t);
-    return;
-}
-*/
+
+/**
+ * pager_configurenotify - handle ConfigureNotify from a managed window.
+ * @p:  Pager instance. (transfer none)
+ * @ev: XConfigureEvent from the per-window GDK filter. (transfer none)
+ *
+ * Looks up the window in the hash table.  If found, refreshes the task's
+ * position and size via task_get_sizepos(), then marks the desk dirty.
+ */
 static void
 pager_configurenotify(pager_priv *p, XEvent *ev)
 {
@@ -936,6 +1289,17 @@ pager_configurenotify(pager_priv *p, XEvent *ev)
     return;
 }
 
+/**
+ * pager_propertynotify - handle PropertyNotify from a managed window.
+ * @p:  Pager instance. (transfer none)
+ * @ev: XPropertyEvent from the per-window GDK filter. (transfer none)
+ *
+ * Ignores root-window property changes (handled via FbEv signals).
+ * Handles _NET_WM_STATE: updates t->nws.
+ * Handles _NET_WM_DESKTOP: marks old desk dirty, updates t->desktop.
+ * Other atoms are ignored.
+ * Always marks the affected desk dirty after state update.
+ */
 static void
 pager_propertynotify(pager_priv *p, XEvent *ev)
 {
@@ -962,6 +1326,18 @@ pager_propertynotify(pager_priv *p, XEvent *ev)
     return;
 }
 
+/**
+ * pager_event_filter - per-window GDK event filter for managed windows.
+ * @xev:   Raw X11 event. (transfer none)
+ * @event: GDK event wrapper (unused). (transfer none)
+ * @pg:    Pager instance. (transfer none)
+ *
+ * Installed on each task's GdkWindow via gdk_window_add_filter().
+ * Dispatches PropertyNotify to pager_propertynotify() and
+ * ConfigureNotify to pager_configurenotify().
+ *
+ * Always returns GDK_FILTER_CONTINUE (events are not consumed).
+ */
 static GdkFilterReturn
 pager_event_filter( XEvent *xev, GdkEvent *event, pager_priv *pg)
 {
@@ -972,6 +1348,15 @@ pager_event_filter( XEvent *xev, GdkEvent *event, pager_priv *pg)
     return GDK_FILTER_CONTINUE;
 }
 
+/**
+ * pager_bg_changed - FbBg "changed" signal handler; redraws all desks.
+ * @bg: FbBg instance (unused). (transfer none)
+ * @pg: Pager instance. (transfer none)
+ *
+ * Called when the X root window background changes.  Redraws the wallpaper
+ * cache (desk_draw_bg) and marks all desks dirty.  desk_draw_bg is a no-op
+ * in the GTK3 port, so this only triggers a full repaint.
+ */
 static void
 pager_bg_changed(FbBg *bg, pager_priv *pg)
 {
@@ -986,6 +1371,20 @@ pager_bg_changed(FbBg *bg, pager_priv *pg)
 }
 
 
+/**
+ * pager_rebuild_all - FbEv "number_of_desktops" signal handler; rebuilds desk array.
+ * @ev: FbEv instance (may be NULL when called directly at construction). (transfer none)
+ * @pg: Pager instance. (transfer none)
+ *
+ * Re-reads _NET_NUMBER_OF_DESKTOPS and _NET_CURRENT_DESKTOP.  If the count
+ * did not change, returns immediately.  Otherwise:
+ *  - If desktops were removed: calls desk_free() for each removed desk.
+ *  - If desktops were added: calls desk_new() for each new desk.
+ * Then clears the entire task hash table (task_remove_all), and re-reads
+ * the current desktop and client list to repopulate.
+ *
+ * Desktop count is clamped to [1, MAX_DESK_NUM].
+ */
 static void
 pager_rebuild_all(FbEv *ev, pager_priv *pg)
 {
@@ -1027,7 +1426,26 @@ pager_rebuild_all(FbEv *ev, pager_priv *pg)
     return;
 }
 
+/** Border width (pixels) between the plugin's GtkBgbox and the desk box. */
 #define BORDER 1
+
+/**
+ * pager_constructor - plugin constructor; initialises and shows the pager.
+ * @plug: Plugin instance (also usable as pager_priv*). (transfer none)
+ *
+ * Initialisation sequence:
+ *  1. Allocate task hash table (keyed by Window integer value).
+ *  2. Create inner GtkBox (horizontal or vertical, spacing=1).
+ *  3. Set GtkBgbox background to BG_STYLE; add inner box to plug->pwid.
+ *  4. Compute desk aspect ratio from primary monitor geometry.
+ *  5. Compute dah/daw (desk area height/width) from panel dimensions.
+ *  6. Optionally acquire FbBg and connect "changed" signal for wallpaper.
+ *  7. Load default XPM icon into pg->gen_pixbuf.
+ *  8. Call pager_rebuild_all() to create desks and populate tasks.
+ *  9. Connect FbEv signals for desktop/window changes.
+ *
+ * Returns: 1 on success.
+ */
 static int
 pager_constructor(plugin_instance *plug)
 {
@@ -1063,8 +1481,6 @@ pager_constructor(plugin_instance *plug)
         pg->dah = (gfloat) pg->daw / pg->ratio;
     }
     pg->wallpaper = 1;
-    //pg->scaley = (gfloat)pg->dh / (gfloat)gdk_screen_get_height(gdk_screen_get_default());
-    //pg->scalex = (gfloat)pg->dw / (gfloat)gdk_screen_get_width(gdk_screen_get_default());
     XCG(plug->xc, "showwallpaper", &pg->wallpaper, enum, bool_enum);
     if (pg->wallpaper) {
         pg->fbbg = fb_bg_get_for_display();
@@ -1073,6 +1489,8 @@ pager_constructor(plugin_instance *plug)
             G_CALLBACK(pager_bg_changed), pg);
     }
 
+    /* Default icon for windows without _NET_WM_ICON or WM_HINTS icon.
+     * Note: gen_pixbuf is not freed in pager_destructor (BUG-020). */
     pg->gen_pixbuf = gdk_pixbuf_new_from_xpm_data((const char **)icon_xpm);
 
     pager_rebuild_all(fbev, pg);
@@ -1088,6 +1506,22 @@ pager_constructor(plugin_instance *plug)
     return 1;
 }
 
+/**
+ * pager_destructor - plugin destructor; frees all pager resources.
+ * @p: Plugin instance (also usable as pager_priv*). (transfer none)
+ *
+ * Teardown sequence:
+ *  1. Disconnect all FbEv signal handlers (current_desktop, active_window,
+ *     number_of_desktops, client_list_stacking).
+ *  2. desk_free() for each desk (destroys cairo surfaces and GtkDrawingAreas).
+ *  3. task_remove_all() for all hash table entries via foreach_remove.
+ *  4. g_hash_table_destroy().
+ *  5. gtk_widget_destroy(pg->box).
+ *  6. If wallpaper: disconnect pager_bg_changed and g_object_unref(pg->fbbg).
+ *  7. XFree(pg->wins) if set.
+ *
+ * Note: pg->gen_pixbuf is NOT freed here (BUG-020).
+ */
 static void
 pager_destructor(plugin_instance *p)
 {

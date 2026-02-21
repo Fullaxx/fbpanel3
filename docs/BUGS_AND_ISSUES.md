@@ -528,3 +528,127 @@ for (dot = action; (dot = strchr(dot, '%')) != NULL; ) {
     }
 }
 ```
+
+---
+
+### BUG-018 — `pager_priv::task` name and iname fields declared but never written
+
+**File**: `plugins/pager/pager.c:struct _task`
+**Severity**: cosmetic
+**Status**: open
+
+**Description**:
+The `task` struct declares `char *name, *iname` fields, presumably for the
+window title (analogous to the same fields in taskbar's task struct).  However,
+no code in pager.c ever assigns to them.  They are always NULL (zeroed by
+g_new0).  They are also never freed (harmless since always NULL, but misleading).
+
+**Suspected fix**: Remove the fields from the struct; or populate them if
+a window-title tooltip is ever added to the pager.
+
+---
+
+### BUG-019 — `desk::scalew` and `desk::scaleh` field names are swapped
+
+**File**: `plugins/pager/pager.c:desk_configure_event` (scale assignment)
+**Severity**: cosmetic (no visual impact)
+**Status**: open
+
+**Description**:
+In `desk_configure_event()`:
+```c
+d->scalew = (gfloat)h / (gfloat)geom.height;  /* uses desk HEIGHT for WIDTH scale */
+d->scaleh = (gfloat)w / (gfloat)geom.width;   /* uses desk WIDTH for HEIGHT scale */
+```
+`scalew` (which ought to be the x/width scale) is set from `desk_h/screen_h`,
+and `scaleh` (which ought to be the y/height scale) is set from `desk_w/screen_w`.
+The names are backwards.
+
+In `task_update_pix()`, scalew is used to scale x and width, and scaleh is
+used to scale y and height, which is also backwards by name but consistent
+with the desk_configure_event assignment.
+
+Since the desk is sized so that `daw/dah == screen_w/screen_h`, the two scale
+values are numerically equal, so there is no visual error.
+
+**Suspected fix**: Swap the field names or the assignment expressions to match
+conventional semantics.
+
+---
+
+### BUG-020 — `pager_priv::gen_pixbuf` not freed in `pager_destructor`
+
+**File**: `plugins/pager/pager.c:pager_destructor`
+**Severity**: moderate (leak)
+**Status**: open
+
+**Description**:
+`pg->gen_pixbuf` is loaded from default.xpm in `pager_constructor()`:
+```c
+pg->gen_pixbuf = gdk_pixbuf_new_from_xpm_data((const char **)icon_xpm);
+```
+It is used as the fallback icon in `task_update_pix()`.  `pager_destructor()`
+does not call `g_object_unref(pg->gen_pixbuf)`, leaking one GdkPixbuf
+per pager instance lifetime.
+
+**Suspected fix**:
+```c
+if (pg->gen_pixbuf)
+    g_object_unref(pg->gen_pixbuf);
+```
+Add before or after the `XFree(pg->wins)` call in `pager_destructor()`.
+
+---
+
+### BUG-021 — `pager_priv::dirty` field declared but never used
+
+**File**: `plugins/pager/pager.c:struct _pager_priv`
+**Severity**: cosmetic
+**Status**: open
+
+**Description**:
+`pager_priv` declares an `int dirty` field.  No code reads or writes it
+after the struct is zeroed by the plugin framework allocation.  The per-desk
+`desk::dirty` field is what is actually used for redraw scheduling.
+
+**Suspected fix**: Remove the field.
+
+---
+
+### BUG-022 — `desk::first` set in `desk_new` but never read
+
+**File**: `plugins/pager/pager.c:desk_new` / `struct _desk`
+**Severity**: cosmetic
+**Status**: open
+
+**Description**:
+`desk_new()` sets `d->first = 1` but no code ever reads `d->first`.
+This appears to be a stub for initialisation logic that was never completed.
+
+**Suspected fix**: Remove the field and the assignment.
+
+---
+
+### BUG-023 — `task_remove_stale` does not free `t->pixbuf`
+
+**File**: `plugins/pager/pager.c:task_remove_stale`
+**Severity**: moderate (leak)
+**Status**: open
+
+**Description**:
+When a window disappears from _NET_CLIENT_LIST_STACKING, `task_remove_stale()`
+is called to remove it.  It removes the GDK filter and unrefs `gdkwin`, but
+does NOT call `g_object_unref(t->pixbuf)`.  If the task had a loaded icon
+(from get_netwm_icon or get_wm_icon), that GdkPixbuf leaks.
+
+By contrast, `task_remove_all()` (called at destructor time) does free pixbuf:
+```c
+if (t->pixbuf != NULL)
+    g_object_unref(t->pixbuf);
+```
+
+**Reproduction**: Open a window with an icon (e.g. a terminal with a custom
+icon), close it, and repeat.  Each close leaks one GdkPixbuf.
+
+**Suspected fix**: Add the same pixbuf free to `task_remove_stale()` before
+the `g_free(t)` call.

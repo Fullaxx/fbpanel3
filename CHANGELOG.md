@@ -1,3 +1,16 @@
+## Version: 8.3.37
+* docs: add full Doxygen-style comments to plugins/pager/pager.c.  Documents
+  task and desk struct fields (ownership, lifecycle, GDK filter, cairo surface
+  management), the two-pass stale-removal pattern in do_net_client_list_stacking,
+  the per-window GDK filter (pager_event_filter, PropertyNotify/ConfigureNotify
+  dispatch), the desk drawing pipeline (backing surface, dirty-flag scheduling,
+  desk_clear_pixmap, task_update_pix cairo rendering with GTK style colours),
+  the wallpaper stub (desk_draw_bg is a no-op in the GTK3 port), dynamic desk
+  creation/removal in pager_rebuild_all, and the FbEv signal connections.
+  Records BUG-018 through BUG-023 (unused task fields, swapped scale naming,
+  gen_pixbuf leak, unused pager_priv::dirty, desk::first stub, task_remove_stale
+  pixbuf leak).  No logic changes.
+
 ## Version: 8.3.36
 * docs: add full Doxygen-style comments to plugins/menu/ (menu.h, menu.c,
   system_menu.c).  Documents menu_priv struct fields (ownership of GtkMenu,

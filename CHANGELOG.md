@@ -1,3 +1,9 @@
+## Version: 8.3.49
+* docs: close BUG-002 — the single-threaded assumption in fb_bg_finalize()
+  was already documented during the Phase 2 documentation pass. Remove the
+  stale "See BUG-002" cross-reference from bg.c since it now points to a
+  closed issue. No logic changes.
+
 ## Version: 8.3.48
 * cleanup: fix BUG-008 — skip unnecessary pix[1]/pix[2] rebuild in
   fb_image_icon_theme_changed() when conf->hicolor == 0. Plain images

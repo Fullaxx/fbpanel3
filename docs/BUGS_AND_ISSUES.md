@@ -59,7 +59,7 @@ static void fb_ev_finalize(GObject *object)
 
 **File**: `panel/bg.c:166` (`fb_bg_finalize`)
 **Severity**: cosmetic / defensive hardening
-**Status**: open
+**Status**: fixed (v8.3.49) — comment added documenting the single-threaded assumption; cross-reference cleaned up
 
 **Description**:
 `fb_bg_finalize()` calls `XFreeGC(bg->dpy, bg->gc)` unconditionally.

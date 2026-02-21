@@ -237,7 +237,6 @@ fb_bg_new()
  * Note: sets default_bg = NULL unconditionally.  Since the GTK main
  * loop is single-threaded, no race between finalize and
  * fb_bg_get_for_display() is possible in normal operation.
- * See BUG-002 in docs/BUGS_AND_ISSUES.md.
  */
 static void
 fb_bg_finalize (GObject *object)

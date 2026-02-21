@@ -94,7 +94,7 @@ single-threaded assumption.
 
 **File**: `panel/ev.c:292-294`
 **Severity**: moderate
-**Status**: open
+**Status**: fixed (v8.3.42)
 
 **Description**:
 Three accessor functions are declared in the `.c` file as prototypes only

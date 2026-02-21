@@ -30,9 +30,11 @@
  * fb_ev_client_list()             → Window* (transfer none; do NOT XFree)
  * fb_ev_client_list_stacking()    → Window* (transfer none; do NOT XFree)
  *
+ * All accessors use lazy fetching: the value is re-fetched from X11 the
+ * first time after the corresponding signal invalidates the cache.
  * The Window* accessors return pointers into the FbEv instance's own storage.
  * They are valid until the next EV_CLIENT_LIST / EV_CLIENT_LIST_STACKING
- * signal fires, which frees and NULLs the arrays.
+ * signal fires, which XFree()s and NULLs the arrays.
  *
  * See also: docs/MEMORY_MODEL.md §7 (signal handler cleanup).
  */
@@ -181,33 +183,33 @@ int fb_ev_number_of_desktops(FbEv *ev);
  * fb_ev_active_window - return the XID of the currently active window.
  * @ev: FbEv instance.
  *
- * NOTE: currently declared but not implemented in ev.c — see BUG-003
- * in docs/BUGS_AND_ISSUES.md.
+ * Lazy: queries _NET_ACTIVE_WINDOW from X11 if the cached value was
+ * invalidated (set to None) by the EV_ACTIVE_WINDOW signal handler.
  *
- * Returns: Window XID of the active window, or None if unavailable.
+ * Returns: Window XID of the active window, or None if the property is absent.
  */
 Window fb_ev_active_window(FbEv *ev);
 
 /**
- * fb_ev_client_list - return the array of mapped client window XIDs.
+ * fb_ev_client_list - return the cached _NET_CLIENT_LIST window array.
  * @ev: FbEv instance.
  *
- * NOTE: currently declared but not implemented in ev.c — see BUG-003
- * in docs/BUGS_AND_ISSUES.md.
+ * Lazy: fetches _NET_CLIENT_LIST from X11 if the cached pointer was
+ * set to NULL by the EV_CLIENT_LIST signal handler.
  *
- * Returns: (transfer none) pointer into ev's internal storage, or NULL.
+ * Returns: (transfer none) Window array, or NULL if the property is absent.
  *   Valid until the next EV_CLIENT_LIST signal.  Do NOT XFree the pointer.
  */
 Window *fb_ev_client_list(FbEv *ev);
 
 /**
- * fb_ev_client_list_stacking - return the stacking-order client window array.
+ * fb_ev_client_list_stacking - return the _NET_CLIENT_LIST_STACKING array.
  * @ev: FbEv instance.
  *
- * NOTE: currently declared but not implemented in ev.c — see BUG-003
- * in docs/BUGS_AND_ISSUES.md.
+ * Lazy: fetches the property from X11 if the cached pointer was set to
+ * NULL by the EV_CLIENT_LIST_STACKING signal handler.
  *
- * Returns: (transfer none) pointer into ev's internal storage, or NULL.
+ * Returns: (transfer none) Window array in stacking order, or NULL if absent.
  *   Valid until the next EV_CLIENT_LIST_STACKING signal.  Do NOT XFree.
  */
 Window *fb_ev_client_list_stacking(FbEv *ev);

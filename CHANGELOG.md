@@ -1,3 +1,15 @@
+## Version: 8.3.42
+* bugfix: implement three missing accessor function bodies in panel/ev.c
+  (BUG-003). fb_ev_active_window(), fb_ev_client_list(), and
+  fb_ev_client_list_stacking() were declared in ev.h but their definitions
+  in ev.c were bare prototypes with no body — calling them would resolve
+  to an undefined symbol. All three now follow the same lazy-fetch pattern
+  as fb_ev_current_desktop()/fb_ev_number_of_desktops(): the cached value
+  is refetched from X11 via get_xaproperty() when invalidated by the
+  corresponding EV_* signal, and the result is cached until the next signal.
+  The Window* accessors return transfer-none pointers into FbEv's own storage
+  (X11 heap); callers must not XFree them.
+
 ## Version: 8.3.41
 * bugfix: fix three bugs in panel core files (no behaviour change for
   normal use; all fixes correct latent errors):

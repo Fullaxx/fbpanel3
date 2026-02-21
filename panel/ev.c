@@ -28,10 +28,6 @@
  * ev_desktop_names().  However it is NOT freed in fb_ev_finalize() —
  * see BUG-001 in docs/BUGS_AND_ISSUES.md.
  *
- * UNIMPLEMENTED ACCESSORS
- * -----------------------
- * fb_ev_active_window(), fb_ev_client_list(), fb_ev_client_list_stacking()
- * are declared but have no implementation body in this file — see BUG-003.
  */
 
 /*
@@ -116,7 +112,7 @@ struct _FbEvClass {
  *                          Freed with XFree() in ev_client_list_stacking().
  *                          NULL = invalid or not yet fetched.
  * @xroot, @id, @gc, @dpy, @pixmap: Legacy fields copied from FbBg init;
- *                          currently unused in FbEv — historical artefact.
+ *                          currently unused in FbEv — historical artefacts.
  */
 struct _FbEv {
     GObject    parent_instance;
@@ -472,14 +468,69 @@ fb_ev_number_of_desktops(FbEv *ev)
 
 }
 
-/*
- * NOTE — BUG-003: the following three functions are declared here as bare
- * prototypes without a function body.  They appear to be unfinished
- * implementations.  If any plugin calls them, the linker will fail to
- * resolve them (or resolve to an unrelated symbol via --export-dynamic).
+/**
+ * fb_ev_active_window - return the XID of the currently active window.
+ * @ev: FbEv instance.
  *
- * See docs/BUGS_AND_ISSUES.md §BUG-003 for the suspected fix.
+ * Lazy: if ev->active_window == None (invalidated by EV_ACTIVE_WINDOW),
+ * queries _NET_ACTIVE_WINDOW from the X11 root window via get_xaproperty().
+ * The result is cached until the next EV_ACTIVE_WINDOW signal.
+ *
+ * Returns: Window XID of the active window, or None if the property is absent.
  */
-Window fb_ev_active_window(FbEv *ev);
-Window *fb_ev_client_list(FbEv *ev);
-Window *fb_ev_client_list_stacking(FbEv *ev);
+Window
+fb_ev_active_window(FbEv *ev)
+{
+    if (ev->active_window == None) {
+        Window *data = get_xaproperty(GDK_ROOT_WINDOW(), a_NET_ACTIVE_WINDOW,
+                                      XA_WINDOW, 0);
+        if (data) {
+            ev->active_window = *data;
+            XFree(data);   /* X11-heap; must use XFree */
+        }
+    }
+    return ev->active_window;
+}
+
+/**
+ * fb_ev_client_list - return the cached _NET_CLIENT_LIST window array.
+ * @ev: FbEv instance.
+ *
+ * Lazy: if ev->client_list == NULL (invalidated by EV_CLIENT_LIST signal),
+ * fetches _NET_CLIENT_LIST from the X11 root window.  The returned pointer
+ * is owned by FbEv (X11 heap) and remains valid until the next
+ * EV_CLIENT_LIST signal fires (which calls XFree and sets it to NULL).
+ *
+ * Returns: (transfer none) Window array, or NULL if absent.
+ *          Do NOT XFree the result — FbEv owns it.
+ */
+Window *
+fb_ev_client_list(FbEv *ev)
+{
+    if (ev->client_list == NULL)
+        ev->client_list = get_xaproperty(GDK_ROOT_WINDOW(), a_NET_CLIENT_LIST,
+                                         XA_WINDOW, 0);
+    return ev->client_list;
+}
+
+/**
+ * fb_ev_client_list_stacking - return the cached _NET_CLIENT_LIST_STACKING array.
+ * @ev: FbEv instance.
+ *
+ * Lazy: if ev->client_list_stacking == NULL (invalidated by
+ * EV_CLIENT_LIST_STACKING signal), fetches the property from the root window.
+ * The returned pointer is owned by FbEv (X11 heap) and remains valid until
+ * the next EV_CLIENT_LIST_STACKING signal fires.
+ *
+ * Returns: (transfer none) Window array in stacking order, or NULL if absent.
+ *          Do NOT XFree the result — FbEv owns it.
+ */
+Window *
+fb_ev_client_list_stacking(FbEv *ev)
+{
+    if (ev->client_list_stacking == NULL)
+        ev->client_list_stacking = get_xaproperty(GDK_ROOT_WINDOW(),
+                                                   a_NET_CLIENT_LIST_STACKING,
+                                                   XA_WINDOW, 0);
+    return ev->client_list_stacking;
+}

@@ -652,3 +652,31 @@ icon), close it, and repeat.  Each close leaks one GdkPixbuf.
 
 **Suspected fix**: Add the same pixbuf free to `task_remove_stale()` before
 the `g_free(t)` call.
+
+---
+
+### BUG-024 — `task_remove_stale` / `task_remove_every` in icons.c missing third `GHRFunc` parameter
+
+**File**: `plugins/icons/icons.c:task_remove_stale`, `task_remove_every`
+**Severity**: minor (undefined behaviour, harmless in practice)
+**Status**: open
+
+**Description**:
+`g_hash_table_foreach_remove()` requires a `GHRFunc` with signature:
+```c
+gboolean (*GHRFunc)(gpointer key, gpointer value, gpointer user_data);
+```
+Both `task_remove_stale()` and `task_remove_every()` in `icons.c` are defined
+with only **two** parameters (key, value) — the `user_data` parameter is
+absent:
+```c
+static gboolean task_remove_stale(gpointer key, gpointer value) { ... }
+static gboolean task_remove_every (gpointer key, gpointer value) { ... }
+```
+The C cast in the `g_hash_table_foreach_remove()` call silences the
+compiler mismatch warning.  Because GLib passes `user_data` via register/stack
+and neither function reads it, this is harmless on all common x86/x86-64
+ABIs, but it is formally undefined behaviour per the C standard.
+
+**Suspected fix**: Add the unused `gpointer user_data` third parameter to both
+functions (and remove the `(GHRFunc)` cast).

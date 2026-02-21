@@ -1,3 +1,19 @@
+## Version: 8.3.39
+* docs: add full Doxygen-style comments to plugins/launchbar/launchbar.c and
+  plugins/icons/icons.c.  Documents launchbar btn/launchbar_priv struct fields
+  (action ownership: expand_tilda transfer-full stored, iname transfer-none raw
+  xconf pointer passed into fb_button_new), drag-and-drop TARGET_URILIST and
+  TARGET_MOZ_URL handlers, Ctrl+RMB discard_release_event bitfield guard, icon
+  size CSS injection, and the read_button config-key loop.  Documents icons
+  plugin struct fields (wmpix_t ch: g_strdup'd g_free'd by drop_config;
+  task ch: XGetClassHint X11 heap XFree'd by free_task), the pixbuf2argb
+  [width, height, ARGB...] format, set_icon_maybe 3-step decision (user >
+  native > default), get_user_icon NULL-wildcard matching, the two-pass stale-
+  removal pattern in do_net_client_list, and the invisible=1 plugin design.
+  Records BUG-024: task_remove_stale/task_remove_every missing third GHRFunc
+  parameter (cast suppresses mismatch; formally UB, harmless on x86/x86-64).
+  No logic changes.
+
 ## Version: 8.3.38
 * docs: add full Doxygen-style comments to plugins/tray/ (main.c,
   eggtraymanager.h, eggtraymanager.c, fixedtip.c).  Documents the XEMBED

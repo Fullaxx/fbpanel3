@@ -18,10 +18,9 @@
  * pix[1] — highlight; created lazily by fb_button_new(); NULL for plain fb_images.
  * pix[2] — press; created lazily by fb_button_new(); NULL for plain fb_images.
  *
- * On icon-theme change (fb_image_icon_theme_changed), all three are rebuilt
- * unconditionally — even for plain images where pix[1]/pix[2] serve no purpose.
- * This is harmless (hicolor==0 produces a no-op highlight copy) but wasteful.
- * See BUG-008 in docs/BUGS_AND_ISSUES.md.
+ * On icon-theme change (fb_image_icon_theme_changed), pix[0] is always rebuilt.
+ * pix[1] and pix[2] are only rebuilt when conf->hicolor != 0 (button mode);
+ * plain images (hicolor==0) skip the highlight/press rebuild.
  *
  * BUTTON EVENT ROUTING
  * --------------------
@@ -315,9 +314,9 @@ fb_image_free(GObject *image)
  *   pix[1] — highlight version via fb_pixbuf_make_back_image
  *   pix[2] — press version via fb_pixbuf_make_press_image
  *
- * Note: pix[1] and pix[2] are always rebuilt, even for plain fb_image_new()
- * images where hicolor == 0.  In that case the highlight is a no-op alpha copy.
- * See BUG-008 in docs/BUGS_AND_ISSUES.md.
+ * pix[1] and pix[2] are only rebuilt when conf->hicolor is non-zero (i.e.
+ * the image is used as a button with hover highlighting).  Plain images
+ * (created via fb_image_new()) have hicolor==0 and skip the rebuild.
  *
  * Sets the image to display pix[0] (normal state) after rebuilding.
  */
@@ -336,8 +335,10 @@ fb_image_icon_theme_changed(GtkIconTheme *icon_theme, GtkWidget *image)
 	}
     conf->pix[0] = fb_pixbuf_new(conf->iname, conf->fname,
             conf->width, conf->height, TRUE);
-    conf->pix[1] = fb_pixbuf_make_back_image(conf->pix[0], conf->hicolor);
-    conf->pix[2] = fb_pixbuf_make_press_image(conf->pix[1]);
+    if (conf->hicolor) {
+        conf->pix[1] = fb_pixbuf_make_back_image(conf->pix[0], conf->hicolor);
+        conf->pix[2] = fb_pixbuf_make_press_image(conf->pix[1]);
+    }
     gtk_image_set_from_pixbuf(GTK_IMAGE(image), conf->pix[0]);
     return;
 }

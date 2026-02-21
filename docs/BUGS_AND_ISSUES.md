@@ -262,7 +262,7 @@ verify all callers use the consistent name.
 
 **File**: `panel/widgets.c:fb_image_icon_theme_changed`
 **Severity**: cosmetic (wasted allocation)
-**Status**: open
+**Status**: fixed (v8.3.48)
 
 **Description**:
 When the icon theme changes, `fb_image_icon_theme_changed` always rebuilds

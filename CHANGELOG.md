@@ -1,3 +1,12 @@
+## Version: 8.3.48
+* cleanup: fix BUG-008 — skip unnecessary pix[1]/pix[2] rebuild in
+  fb_image_icon_theme_changed() when conf->hicolor == 0. Plain images
+  (created via fb_image_new(), no hover highlighting) had their highlight
+  and press pixbufs unconditionally rebuilt on every icon-theme change even
+  though those pixbufs are never displayed. Guard the rebuild with
+  if (conf->hicolor) so only button images (fb_button_new(), hicolor != 0)
+  pay the allocation cost.
+
 ## Version: 8.3.47
 * cleanup: fix BUG-005 — rewrite the two NULL-guard expressions in
   xconf_cmp() for clarity. The original !(a || b) / !(a && b) forms were

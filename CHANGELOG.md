@@ -1,3 +1,9 @@
+## Version: 8.3.51
+* cleanup: fix BUG-009 — remove the unused `label` parameter from fb_button_new().
+  All three callers (launchbar, menu, wincmd) passed NULL; the parameter was never
+  referenced in the function body. Remove it from widgets.h and widgets.c and
+  update all call sites.
+
 ## Version: 8.3.50
 * cleanup: close BUG-004 — document gtk_bgbox_set_bg_inherit() as intentionally
   unimplemented. Remove the dead priv re-fetch that overwrote the caller-supplied

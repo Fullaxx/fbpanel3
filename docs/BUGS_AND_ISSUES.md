@@ -288,20 +288,15 @@ Guard the pix[1]/pix[2] rebuild in `fb_image_icon_theme_changed` with
 
 **File**: `panel/widgets.c:fb_button_new` and `panel/widgets.h`
 **Severity**: minor (undocumented missing feature)
-**Status**: open
+**Status**: resolved in v8.3.51
 
 **Description**:
-`fb_button_new` accepts a `gchar *label` (documented as label text) but never
-uses it.  The original code has a `FIXME` comment acknowledging this.  Any
-plugin passing a non-NULL label string gets no text displayed.
+`fb_button_new` accepted a `gchar *label` (documented as label text) but never
+used it.  All three callers (launchbar.c, menu.c, wincmd.c) passed NULL.
 
-**Reproduction**:
-Call `fb_button_new(..., "My Label")` and observe that no label appears.
-
-**Suspected fix**:
-Either implement label support (add a GtkLabel sibling to the GtkImage inside
-the GtkBgbox, possibly using a GtkBox to stack them), or remove the parameter
-from the API and update all callers.
+**Resolution (v8.3.51)**: Removed the `label` parameter from the function
+signature in widgets.h and widgets.c.  Updated all three callers to drop the
+trailing NULL argument.
 
 ---
 

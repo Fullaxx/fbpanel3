@@ -410,7 +410,7 @@ make_button(plugin_instance *p, xconf *xc)
     XCG(xc, "icon", &iname, str);
     if (fname || iname)
     {
-        m->bg = fb_button_new(iname, fname, w, h, 0x702020, NULL);
+        m->bg = fb_button_new(iname, fname, w, h, 0x702020);
         gtk_container_add(GTK_CONTAINER(p->pwid), m->bg);
         if (p->panel->transparent)
             gtk_bgbox_set_background(m->bg, BG_INHERIT, 0, 0);

@@ -358,7 +358,6 @@ static gboolean fb_button_pressed(GtkWidget *widget, GdkEventButton *event);
  * @width:   Desired icon width in pixels.
  * @height:  Desired icon height in pixels.
  * @hicolor: Hover highlight colour as 0xRRGGBB; 0 = no highlight.
- * @label:   Currently ignored.  See BUG-009 in docs/BUGS_AND_ISSUES.md.
  *
  * Creates a GtkBgbox (has_window=TRUE; pseudo-transparent background) containing
  * an fb_image_new() child.  After creation, populates pix[1] and pix[2] on the
@@ -378,8 +377,7 @@ static gboolean fb_button_pressed(GtkWidget *widget, GdkEventButton *event);
  * Returns: (transfer full) GtkWidget* (GtkBgbox containing a GtkImage).
  */
 GtkWidget *
-fb_button_new(gchar *iname, gchar *fname, int width, int height,
-      gulong hicolor, gchar *label)
+fb_button_new(gchar *iname, gchar *fname, int width, int height, gulong hicolor)
 {
     GtkWidget *b, *image;
     fb_image_conf_t *conf;

@@ -343,7 +343,7 @@ read_button(plugin_instance *p, xconf *xc)
     fname  = expand_tilda(fname);
 
     button = fb_button_new(iname, fname, lb->iconsize,
-        lb->iconsize, 0x202020, NULL);
+        lb->iconsize, 0x202020);
 
     g_signal_connect (G_OBJECT (button), "button-release-event",
           G_CALLBACK (my_button_pressed), (gpointer) &lb->btns[lb->btn_num]);

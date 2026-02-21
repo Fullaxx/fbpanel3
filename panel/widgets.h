@@ -89,7 +89,6 @@ GtkWidget *fb_image_new(gchar *iname, gchar *fname, int width, int height);
  * @width:   Desired icon width in pixels.
  * @height:  Desired icon height in pixels.
  * @hicolor: Hover highlight colour as 0xRRGGBB; 0 disables highlighting.
- * @name:    Ignored (label text); see BUG-009 in docs/BUGS_AND_ISSUES.md.
  *
  * Constructs a GtkBgbox (so it may have a pseudo-transparent background) that
  * contains an fb_image_new(@iname, @fname, @width, @height) child.  Three visual
@@ -110,7 +109,7 @@ GtkWidget *fb_image_new(gchar *iname, gchar *fname, int width, int height);
  * Returns: (transfer full) GtkWidget* (GtkBgbox); caller passes to a container.
  */
 GtkWidget *fb_button_new(gchar *iname, gchar *fname, int width, int height,
-        gulong hicolor, gchar *name);
+        gulong hicolor);
 
 /**
  * fb_create_calendar - create a floating calendar window.

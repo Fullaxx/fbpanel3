@@ -953,17 +953,26 @@ panel_start_gui(panel *p)
     gtk_container_add(GTK_CONTAINER(p->topgwin), p->bbox);
     gtk_container_set_border_width(GTK_CONTAINER(p->bbox), 0);
     if (p->transparent) {
-        /* Apply a dark fallback CSS rule at the lowest priority.  When the
-         * root pixmap is available (wallpaper set) the BG_ROOT path in
-         * gtk_bgbox_draw paints it directly and this CSS is never invoked.
-         * When no root pixmap exists, gtk_bgbox_draw falls back to
-         * gtk_render_background which picks up this rule, giving the panel a
-         * visible dark background rather than transparent/black. */
+        /* Apply fallback CSS rules at PRIORITY_FALLBACK so desktop themes can
+         * override them.  When a wallpaper is set, BG_ROOT mode paints the
+         * root-pixmap slice directly and these rules are never invoked.  When
+         * no wallpaper exists (bare X / VNC), gtk_bgbox_draw falls back to
+         * gtk_render_background(), which picks up these rules.
+         *
+         * Rules applied screen-wide so all GtkBgbox widgets (bbox AND every
+         * plugin pwid) get a consistent dark background:
+         *   #panel-bg      — main panel strip: dark-to-medium gradient
+         *   .panel-plugin  — per-plugin containers: flat dark fill
+         *                    (the "panel-plugin" class is added to each pwid
+         *                    in plugin_start() when transparent == true)
+         */
         GtkCssProvider *css = gtk_css_provider_new();
         gtk_css_provider_load_from_data(css,
-            "#panel-bg { background-color: #333333; }", -1, NULL);
-        gtk_style_context_add_provider(
-            gtk_widget_get_style_context(p->bbox),
+            "#panel-bg { background-color: #2a2a2a;"
+            "             background-image: linear-gradient(to bottom, #555555, #2a2a2a); }\n"
+            ".panel-plugin { background-color: #2a2a2a; }", -1, NULL);
+        gtk_style_context_add_provider_for_screen(
+            gdk_screen_get_default(),
             GTK_STYLE_PROVIDER(css),
             GTK_STYLE_PROVIDER_PRIORITY_FALLBACK);
         g_object_unref(css);

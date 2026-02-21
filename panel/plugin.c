@@ -270,7 +270,9 @@ gboolean panel_button_press_event(GtkWidget *widget, GdkEventButton *event,
  *
  * For visible plugins (class->invisible == 0):
  *   - Creates a GtkBgbox named after class->type and packs it into panel->box.
- *   - Sets BG_INHERIT background if the panel is transparent.
+ *   - Adds the "panel-plugin" CSS class and sets BG_ROOT background if the
+ *     panel is transparent (each pwid independently slices its portion of the
+ *     root pixmap; falls back to the screen-wide CSS dark fill when no wallpaper).
  *   - Connects the panel right-click button-press handler.
  *   - Shows the widget.
  *
@@ -298,7 +300,9 @@ plugin_start(plugin_instance *this)
         DBG("here this->panel->transparent = %d\n", this->panel->transparent);
         if (this->panel->transparent) {
             DBG("here g\n");
-            gtk_bgbox_set_background(this->pwid, BG_INHERIT,
+            gtk_style_context_add_class(
+                    gtk_widget_get_style_context(this->pwid), "panel-plugin");
+            gtk_bgbox_set_background(this->pwid, BG_ROOT,
                     this->panel->tintcolor, this->panel->alpha);
         }
         DBG("here\n");

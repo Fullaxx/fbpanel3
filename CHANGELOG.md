@@ -1,3 +1,22 @@
+## Version: 8.3.53
+* visual: fix black plugin backgrounds and add gradient panel styling.
+  Three related changes:
+  A) plugin.c: change transparent plugin pwid background from BG_INHERIT
+     (an unimplemented stub that left backgrounds black) to BG_ROOT.  Each
+     plugin widget now independently slices its portion of the root pixmap,
+     giving correct wallpaper transparency.  Also adds the "panel-plugin"
+     CSS class to each transparent pwid so the fallback CSS rule applies.
+  B) panel.c: switch the fallback CSS provider from per-widget
+     (gtk_style_context_add_provider on bbox only) to screen-wide
+     (gtk_style_context_add_provider_for_screen), so it covers all
+     GtkBgbox widgets including plugin pwids.  When no wallpaper is set
+     (bare X / VNC), every plugin now shows the same dark-gray background
+     as the panel strip instead of solid black.
+  C) panel.c: replace the flat #333333 fallback with a styled gradient:
+     #panel-bg uses a linear-gradient from #555555 (top) to #2a2a2a (bottom),
+     matching the original GTK2 fbpanel's dark-gradient appearance.
+     .panel-plugin uses flat #2a2a2a.
+
 ## Version: 8.3.52
 * cleanup: close BUG-011 and BUG-012 in misc.c — both are documentation/clarity
   fixes with no logic change.

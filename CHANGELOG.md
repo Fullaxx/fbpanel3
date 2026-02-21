@@ -1,3 +1,13 @@
+## Version: 8.3.35
+* docs: add full Doxygen-style comments to plugins/taskbar/ (all 5 files).
+  Documents task and taskbar_priv struct fields (ownership, lifetime), the
+  multi-TU plugin design (PLUGIN macro suppression, manual class registration),
+  task lifecycle (create/destroy/stale-removal), icon loading priority chain
+  (netwm -> wm_hints -> xpm fallback), cairo custom button rendering, all click
+  callbacks (LMB raise/iconify, MMB shade, RMB menu, Ctrl+RMB panel menu),
+  drag-over activation delay, deferred bar dimension update via idle callback,
+  per-window GDK filter lifecycle, and the EWMH event handlers.  No logic changes.
+
 ## Version: 8.3.34
 * docs: add full Doxygen-style comments to panel/gconf.h, gconf.c, gconf_panel.c,
   gconf_plugins.c, run.h, and run.c.  Documents the gconf_block row-layout helper

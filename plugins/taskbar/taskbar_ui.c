@@ -1,10 +1,82 @@
+/**
+ * @file taskbar_ui.c
+ * @brief Taskbar plugin — task button creation, cairo drawing, and event callbacks.
+ *
+ * BUTTON STRUCTURE (per task)
+ * ---------------------------
+ * tk_build_gui() creates the following widget hierarchy for each task:
+ *
+ *   GtkButton (tk->button)
+ *     +-- "draw" signal: tk_button_draw (cairo custom rendering)
+ *     +-- "button_release_event": tk_callback_button_release_event
+ *     +-- "button_press_event":   tk_callback_button_press_event
+ *     +-- "enter" / "leave":      tk_callback_enter / leave
+ *     +-- "drag-motion" / "drag-leave": tk_callback_drag_motion/leave
+ *     +-- "scroll-event" (optional):    tk_callback_scroll_event
+ *     |
+ *     +-- icons_only: GtkImage (tk->image) added directly to button
+ *     +-- !icons_only: GtkBox (horizontal, spacing 1)
+ *           +-- GtkImage (tk->image)
+ *           +-- GtkLabel (tk->label, PANGO_ELLIPSIZE_END)
+ *
+ * The button is packed into tb->bar (GtkBar) via gtk_box_pack_start.
+ *
+ * CAIRO CUSTOM RENDERING
+ * ----------------------
+ * tk_button_draw() connects to the "draw" signal and returns TRUE to suppress
+ * GTK3's default button drawing.  It renders a gradient-filled rounded rectangle
+ * (radius 3px) with a thin border, then calls gtk_container_propagate_draw on
+ * the button's child widget so the icon and label are still drawn.
+ *
+ * Three gradient stops:
+ *   GTK_STATE_FLAG_ACTIVE (focused):  dark gray gradient (0.44 -> 0.35)
+ *   GTK_STATE_FLAG_PRELIGHT (hover):  light gray gradient (0.75 -> 0.60)
+ *   Normal:                           medium gray gradient (0.67 -> 0.53)
+ *
+ * CLICK HANDLING
+ * --------------
+ * LMB (button 1):
+ *   - Iconified window: unmap/raise it (XMapRaised or _NET_ACTIVE_WINDOW).
+ *   - Focused or recently-clicked (ptk) window: iconify it (XIconifyWindow).
+ *   - Otherwise: raise it (tk_raise_window).
+ *
+ * MMB (button 2): toggle _NET_WM_STATE_SHADED via _NET_WM_STATE ClientMessage.
+ *
+ * RMB (button 3): show the task context menu (tb->menu) at pointer position.
+ *   Ctrl+RMB: propagate to the panel's bar for the panel context menu.
+ *   The discard_release_event flag prevents the release after Ctrl+RMB from
+ *   accidentally triggering the task menu.
+ *
+ * DRAG-OVER ACTIVATION
+ * --------------------
+ * When a drag enters a task button, a DRAG_ACTIVE_DELAY ms timeout is started
+ * (delay_active_win) that raises the window, allowing the user to drag content
+ * to a different window.  The timeout is cancelled on drag-leave.
+ *
+ * DEFERRED BAR DIMENSION UPDATE
+ * ------------------------------
+ * taskbar_size_alloc() must not call gtk_bar_set_dimension from inside a
+ * size-allocate signal handler.  Instead it stores the new dimension value
+ * in tb->pending_dim and schedules taskbar_apply_dim via g_idle_add.
+ * The idle ID is saved in tb->pending_dim_id so it can be removed in the
+ * destructor if it has not yet fired.
+ */
+
 #include <math.h>
 #include "taskbar_priv.h"
 
-/* Paint the task button background with cairo, bypassing GTK3 theme/CSS.
- * Connected to the "draw" signal (not "draw-after"), so we run before GTK's
- * default button draw.  We return TRUE to suppress GTK's drawing, then
- * propagate to the child (image+label box) ourselves. */
+/**
+ * tk_button_draw - cairo custom rendering for a task button.
+ * @widget:    The GtkButton being drawn.
+ * @cr:        Cairo context for the current draw cycle.
+ * @user_data: Unused.
+ *
+ * Draws a gradient-filled rounded rectangle with a 1px border.  Uses the
+ * widget's current GTK state flags to choose the gradient colours.  After
+ * filling, propagates the draw to the child widget (icon + label box).
+ *
+ * Returns TRUE to suppress GTK's default button rendering.
+ */
 static gboolean
 tk_button_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
@@ -63,6 +135,14 @@ tk_button_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
     return TRUE; /* suppress GTK's default button rendering */
 }
 
+/**
+ * tk_callback_leave - restore button state on mouse leave.
+ * @widget: The task button.
+ * @tk:     The associated task.
+ *
+ * Sets the button state to focused_state if the window is focused, or
+ * normal_state otherwise (hover state is implicitly cleared by GTK on leave).
+ */
 static void
 tk_callback_leave( GtkWidget *widget, task *tk)
 {
@@ -72,6 +152,15 @@ tk_callback_leave( GtkWidget *widget, task *tk)
 }
 
 
+/**
+ * tk_callback_enter - update button state on mouse enter.
+ * @widget: The task button.
+ * @tk:     The associated task.
+ *
+ * Restores the correct (focused or normal) state on enter.  The prelight
+ * gradient is applied by the cairo draw handler based on GTK state flags;
+ * this callback ensures the focused/unfocused distinction is preserved.
+ */
 static void
 tk_callback_enter( GtkWidget *widget, task *tk )
 {
@@ -80,6 +169,15 @@ tk_callback_enter( GtkWidget *widget, task *tk )
     return;
 }
 
+/**
+ * delay_active_win - idle callback to raise a window after drag-over delay.
+ * @tk: Task whose window should be raised.
+ *
+ * Called by the DRAG_ACTIVE_DELAY timeout installed in tk_callback_drag_motion.
+ * Raises the window and clears tb->dnd_activate.
+ *
+ * Returns: FALSE (one-shot; do not repeat).
+ */
 static gboolean
 delay_active_win(task* tk)
 {
@@ -88,6 +186,18 @@ delay_active_win(task* tk)
     return FALSE;
 }
 
+/**
+ * tk_callback_drag_motion - start drag-over activation timer.
+ * @widget:       The task button.
+ * @drag_context: GDK drag context.
+ * @x, @y:        Pointer position within the button.
+ * @time:         Event timestamp.
+ * @tk:           The associated task.
+ *
+ * Installs a DRAG_ACTIVE_DELAY ms one-shot timeout to raise the window
+ * (allowing the user to drag content into it).  If a timeout is already
+ * pending, does nothing.  Returns TRUE with drag status 0 to accept the drag.
+ */
 static gboolean
 tk_callback_drag_motion( GtkWidget *widget,
       GdkDragContext *drag_context,
@@ -103,6 +213,16 @@ tk_callback_drag_motion( GtkWidget *widget,
     return TRUE;
 }
 
+/**
+ * tk_callback_drag_leave - cancel drag-over activation timer.
+ * @widget:       The task button.
+ * @drag_context: GDK drag context (unused).
+ * @time:         Event timestamp (unused).
+ * @tk:           The associated task.
+ *
+ * Removes the pending DRAG_ACTIVE_DELAY timeout if the pointer leaves the
+ * button before the delay fires.
+ */
 static void
 tk_callback_drag_leave (GtkWidget *widget,
       GdkDragContext *drag_context,
@@ -116,6 +236,18 @@ tk_callback_drag_leave (GtkWidget *widget,
 }
 
 
+/**
+ * tk_callback_scroll_event - handle mouse wheel scroll on a task button.
+ * @widget: The task button.
+ * @event:  The scroll event.
+ * @tk:     The associated task.
+ *
+ * Scroll up:   raise/unmap the window (gdk_window_show or XMapRaised + XSetInputFocus).
+ * Scroll down: iconify the window (XIconifyWindow).
+ * XSync is called after Xlib operations.
+ *
+ * Returns TRUE (event consumed).
+ */
 static gint
 tk_callback_scroll_event (GtkWidget *widget, GdkEventScroll *event, task *tk)
 {
@@ -140,6 +272,19 @@ tk_callback_scroll_event (GtkWidget *widget, GdkEventScroll *event, task *tk)
 }
 
 
+/**
+ * tk_callback_button_press_event - handle button-press on a task button.
+ * @widget: The task button.
+ * @event:  The button-press event.
+ * @tk:     The associated task.
+ *
+ * Ctrl+RMB: propagate the event to tb->bar (for the panel context menu) and
+ * set tb->discard_release_event to prevent the release from also triggering
+ * the task menu.  Returns TRUE to stop further propagation.
+ *
+ * All other press events: return FALSE (let GTK handle them normally; the
+ * actual action is in the release handler).
+ */
 static gboolean
 tk_callback_button_press_event(GtkWidget *widget, GdkEventButton *event,
     task *tk)
@@ -154,6 +299,28 @@ tk_callback_button_press_event(GtkWidget *widget, GdkEventButton *event,
 }
 
 
+/**
+ * tk_callback_button_release_event - handle button-release on a task button.
+ * @widget: The task button.
+ * @event:  The button-release event.
+ * @tk:     The associated task.
+ *
+ * Discards the release if discard_release_event is set (set by Ctrl+RMB press).
+ * Discards if the pointer is outside the button's allocation (click drag-out).
+ *
+ * LMB release:
+ *   - Iconified: raise/unmap the window.
+ *   - Focused or == ptk: iconify the window.
+ *   - Otherwise: tk_raise_window.
+ *
+ * MMB release: toggle _NET_WM_STATE_SHADED.
+ *
+ * RMB release: show the task context menu (gtk_menu_popup_at_pointer).
+ *
+ * XSync after all Xlib calls.
+ *
+ * Returns: TRUE if the event was handled; FALSE to pass to GTK.
+ */
 static gboolean
 tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
     task *tk)
@@ -217,6 +384,16 @@ tk_callback_button_release_event(GtkWidget *widget, GdkEventButton *event,
 }
 
 
+/**
+ * tk_update - update visibility and state of a single task button.
+ * @key: Hash table key (unused; task is iterated by g_hash_table_foreach).
+ * @tk:  Task to update.
+ * @tb:  Taskbar instance.
+ *
+ * If task_visible returns true: set button state (focused or normal),
+ * queue a redraw, show the button, and update the tooltip.
+ * Otherwise: hide the button.
+ */
 static void
 tk_update(gpointer key, task *tk, taskbar_priv *tb)
 {
@@ -237,6 +414,11 @@ tk_update(gpointer key, task *tk, taskbar_priv *tb)
     return;
 }
 
+/**
+ * tk_display - refresh the display of a single task.
+ * @tb: Taskbar instance.
+ * @tk: Task to refresh.
+ */
 void
 tk_display(taskbar_priv *tb, task *tk)
 {
@@ -244,6 +426,13 @@ tk_display(taskbar_priv *tb, task *tk)
     return;
 }
 
+/**
+ * tb_display - refresh the display of all tasks.
+ * @tb: Taskbar instance.
+ *
+ * Calls tk_update for every task in the hash table via g_hash_table_foreach.
+ * No-op if tb->wins is NULL (no _NET_CLIENT_LIST has been received yet).
+ */
 void
 tb_display(taskbar_priv *tb)
 {
@@ -253,6 +442,22 @@ tb_display(taskbar_priv *tb)
 
 }
 
+/**
+ * tk_build_gui - create the button widget for a newly-added task.
+ * @tb: Taskbar instance.
+ * @tk: Task whose button is to be created.
+ *
+ * 1. If the window is not a GDK-tracked panel window (FBPANEL_WIN), installs
+ *    XSelectInput for PropertyChangeMask + StructureNotifyMask, then wraps it
+ *    in a GdkWindow (gdk_x11_window_foreign_new_for_display) and installs the
+ *    per-window GDK filter (tb_event_filter).
+ * 2. Creates the GtkButton and connects all event callbacks.
+ * 3. Loads the task icon (tk_update_icon with a=None).
+ * 4. In icons_only mode: adds the GtkImage directly to the button.
+ *    Otherwise: creates an HBox with GtkImage + GtkLabel (PANGO_ELLIPSIZE_END).
+ * 5. Packs the button into tb->bar; hides it if not currently visible.
+ * 6. Starts the flash animation if tk->urgency is set.
+ */
 void
 tk_build_gui(taskbar_priv *tb, task *tk)
 {
@@ -341,6 +546,14 @@ tk_build_gui(taskbar_priv *tb, task *tk)
     return;
 }
 
+/**
+ * menu_close_window - send WM_DELETE_WINDOW to close the task's window.
+ * @widget: Menu item (unused).
+ * @tb:     Taskbar instance; tb->menutask is the target window.
+ *
+ * Sends a WM_PROTOCOLS/WM_DELETE_WINDOW ClientMessage via Xclimsgwm.
+ * This is a polite close request; the window may ignore it.
+ */
 static void
 menu_close_window(GtkWidget *widget, taskbar_priv *tb)
 {
@@ -353,6 +566,11 @@ menu_close_window(GtkWidget *widget, taskbar_priv *tb)
 }
 
 
+/**
+ * menu_raise_window - raise the task's window to the top of the stack.
+ * @widget: Menu item (unused).
+ * @tb:     Taskbar instance.
+ */
 static void
 menu_raise_window(GtkWidget *widget, taskbar_priv *tb)
 {
@@ -362,6 +580,11 @@ menu_raise_window(GtkWidget *widget, taskbar_priv *tb)
 }
 
 
+/**
+ * menu_iconify_window - iconify (minimise) the task's window.
+ * @widget: Menu item (unused).
+ * @tb:     Taskbar instance.
+ */
 static void
 menu_iconify_window(GtkWidget *widget, taskbar_priv *tb)
 {
@@ -371,6 +594,16 @@ menu_iconify_window(GtkWidget *widget, taskbar_priv *tb)
     return;
 }
 
+/**
+ * send_to_workspace - move the task's window to a specific virtual desktop.
+ * @widget: Menu item; the destination desktop index is stored in object data "num".
+ * @iii:    Unused (GtkMenuItem signal passes this as the first data arg).
+ * @tb:     Taskbar instance.
+ *
+ * Sends a _NET_WM_DESKTOP ClientMessage with the destination desktop index.
+ * The "num" object data is set when building the submenu in tb_make_menu.
+ * ALL_WORKSPACES (0xFFFFFFFF) makes the window sticky.
+ */
 static void
 send_to_workspace(GtkWidget *widget, void *iii, taskbar_priv *tb)
 {
@@ -384,6 +617,14 @@ send_to_workspace(GtkWidget *widget, void *iii, taskbar_priv *tb)
     return;
 }
 
+/**
+ * tb_update_desktops_names - refresh tb->desk_names from _NET_DESKTOP_NAMES.
+ * @tb: Taskbar instance.
+ *
+ * Re-reads tb->desk_namesno from the WM and tb->desk_names from the root
+ * window's _NET_DESKTOP_NAMES property.  The old desk_names (if any) is
+ * g_strfreev'd before the new one is assigned.
+ */
 static void
 tb_update_desktops_names(taskbar_priv *tb)
 {
@@ -395,6 +636,24 @@ tb_update_desktops_names(taskbar_priv *tb)
     return;
 }
 
+/**
+ * tb_make_menu - (re)build the task context menu.
+ * @widget: Unused (may be NULL; called from both FbEv signal and directly).
+ * @tb:     Taskbar instance.
+ *
+ * Builds a GtkMenu with:
+ *   - Raise / Iconify actions
+ *   - "Move to workspace" submenu with one item per desktop
+ *     (item for "All workspaces" at the bottom)
+ *   - Separator
+ *   - Close
+ *
+ * Desktop names are re-read from _NET_DESKTOP_NAMES.  If a desktop has no
+ * name, an empty string is used.
+ *
+ * The old tb->menu is gtk_widget_destroy'd before the new one is installed.
+ * The new menu is NOT shown until gtk_menu_popup_at_pointer is called.
+ */
 void
 tb_make_menu(GtkWidget *widget, taskbar_priv *tb)
 {
@@ -455,6 +714,15 @@ tb_make_menu(GtkWidget *widget, taskbar_priv *tb)
     tb->menu = menu;
 }
 
+/**
+ * taskbar_apply_dim - idle callback to apply a deferred GtkBar dimension change.
+ * @tb: Taskbar instance.
+ *
+ * Applies the pending dimension (tb->pending_dim) to tb->bar via
+ * gtk_bar_set_dimension, then clears tb->pending_dim_id.
+ *
+ * Returns: G_SOURCE_REMOVE (one-shot; remove after firing).
+ */
 static gboolean
 taskbar_apply_dim(taskbar_priv *tb)
 {
@@ -463,6 +731,19 @@ taskbar_apply_dim(taskbar_priv *tb)
     return G_SOURCE_REMOVE;
 }
 
+/**
+ * taskbar_size_alloc - handle size-allocate signal on the plugin widget.
+ * @widget: The plugin widget (p->pwid).
+ * @a:      The new allocation.
+ * @tb:     Taskbar instance.
+ *
+ * Computes the number of task button rows (horizontal panels) or columns
+ * (vertical panels) that fit in the new allocation, then schedules a deferred
+ * dimension update via g_idle_add (taskbar_apply_dim).
+ *
+ * Calling gtk_bar_set_dimension directly from a size-allocate handler would
+ * re-enter GTK layout; the idle callback avoids this.
+ */
 static void
 taskbar_size_alloc(GtkWidget *widget, GtkAllocation *a,
     taskbar_priv *tb)
@@ -486,6 +767,20 @@ taskbar_size_alloc(GtkWidget *widget, GtkAllocation *a,
     return;
 }
 
+/**
+ * taskbar_build_gui - construct the taskbar's widget tree and connect FbEv signals.
+ * @p: Plugin instance.
+ *
+ * 1. Connects "size-allocate" on p->pwid (for deferred dimension updates).
+ * 2. Creates tb->bar (GtkBar) with the panel orientation, spacing,
+ *    task_height_max, and task_width_max.
+ * 3. Adds tb->bar to p->pwid.
+ * 4. Loads the fallback icon from default.xpm into tb->gen_pixbuf.
+ * 5. Connects FbEv signals: current_desktop, active_window, number_of_desktops,
+ *    client_list, desktop_names, number_of_desktops (for menu rebuild).
+ * 6. Reads initial cur_desk and desk_num from EWMH.
+ * 7. Builds the initial task context menu (tb_make_menu).
+ */
 void
 taskbar_build_gui(plugin_instance *p)
 {

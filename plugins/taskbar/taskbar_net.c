@@ -1,5 +1,47 @@
+/**
+ * @file taskbar_net.c
+ * @brief Taskbar plugin — EWMH event handlers and per-window GDK event filter.
+ *
+ * This file handles the taskbar's response to root-window EWMH property changes
+ * (received via FbEv signals) and per-window PropertyNotify events (received
+ * via tb_event_filter, a GdkFilterFunc installed on each client GdkWindow).
+ *
+ * ROOT WINDOW EVENTS (via FbEv signals)
+ * ---------------------------------------
+ * tb_net_client_list:   _NET_CLIENT_LIST changed -> rebuild task list.
+ * tb_net_current_desktop: _NET_CURRENT_DESKTOP changed -> update cur_desk, refresh display.
+ * tb_net_number_of_desktops: _NET_NUMBER_OF_DESKTOPS changed -> update desk_num.
+ * tb_net_active_window: _NET_ACTIVE_WINDOW changed -> update tb->focused.
+ *
+ * PER-WINDOW EVENTS (via tb_event_filter / tb_propertynotify)
+ * -----------------------------------------------------------
+ * a_NET_WM_DESKTOP:     Window moved to another desktop.
+ * XA_WM_NAME:           Window title changed.
+ * XA_WM_HINTS:          Icon or urgency hint changed.
+ * a_NET_WM_STATE:       Window state changed (may cause removal from taskbar).
+ * a_NET_WM_ICON:        ARGB icon data updated.
+ * a_NET_WM_WINDOW_TYPE: Window type changed (may cause removal from taskbar).
+ *
+ * STALE TASK REMOVAL
+ * ------------------
+ * tb_net_client_list uses a two-pass approach:
+ *   Pass 1: for each window in the new _NET_CLIENT_LIST:
+ *     - If already in task_list: increment tk->refcount.
+ *     - If new: create task, insert into hash table (refcount=1).
+ *   Pass 2: g_hash_table_foreach_remove with task_remove_stale:
+ *     - If refcount was not incremented (== 0 after decrement): remove task.
+ *
+ * NET ACTIVE WINDOW DETECTION
+ * ---------------------------
+ * use_net_active is set to TRUE by net_active_detect() if a_NET_ACTIVE_WINDOW
+ * appears in the root window's _NET_SUPPORTED list.  When TRUE, window
+ * activation sends _NET_ACTIVE_WINDOW ClientMessages; otherwise Xlib calls
+ * are used directly (XRaiseWindow + XSetInputFocus).
+ */
+
 #include "taskbar_priv.h"
 
+/** TRUE if the WM supports _NET_ACTIVE_WINDOW; set by net_active_detect(). */
 gboolean use_net_active = FALSE;
 
 /*****************************************************
@@ -7,6 +49,19 @@ gboolean use_net_active = FALSE;
  *****************************************************/
 
 
+/**
+ * tb_net_client_list - handle _NET_CLIENT_LIST change.
+ * @widget: FbEv GObject (unused; signature matches GCallback convention).
+ * @tb:     Taskbar instance.
+ *
+ * Refreshes tb->wins from the root window's _NET_CLIENT_LIST property.
+ * Creates task entries for newly-appeared windows (after filtering by
+ * accept_net_wm_state and accept_net_wm_window_type), increments refcount
+ * for existing tasks, then calls task_remove_stale to delete tasks whose
+ * windows are no longer in the list.
+ *
+ * Ownership: tb->wins is replaced on each call (old value XFree'd first).
+ */
 void
 tb_net_client_list(GtkWidget *widget, taskbar_priv *tb)
 {
@@ -65,6 +120,14 @@ tb_net_client_list(GtkWidget *widget, taskbar_priv *tb)
 
 
 
+/**
+ * tb_net_current_desktop - handle _NET_CURRENT_DESKTOP change.
+ * @widget: FbEv GObject (unused).
+ * @tb:     Taskbar instance.
+ *
+ * Updates tb->cur_desk and refreshes the display to show/hide tasks
+ * based on the new active desktop.
+ */
 void
 tb_net_current_desktop(GtkWidget *widget, taskbar_priv *tb)
 {
@@ -74,6 +137,13 @@ tb_net_current_desktop(GtkWidget *widget, taskbar_priv *tb)
 }
 
 
+/**
+ * tb_net_number_of_desktops - handle _NET_NUMBER_OF_DESKTOPS change.
+ * @widget: FbEv GObject (unused).
+ * @tb:     Taskbar instance.
+ *
+ * Updates tb->desk_num and refreshes the display.
+ */
 void
 tb_net_number_of_desktops(GtkWidget *widget, taskbar_priv *tb)
 {
@@ -83,8 +153,21 @@ tb_net_number_of_desktops(GtkWidget *widget, taskbar_priv *tb)
 }
 
 
-/* set new active window. if that happens to be us, then remeber
- * current focus to use it for iconify command */
+/**
+ * tb_net_active_window - handle _NET_ACTIVE_WINDOW change.
+ * @widget: FbEv GObject (unused).
+ * @tb:     Taskbar instance.
+ *
+ * Reads the new active window from _NET_ACTIVE_WINDOW.  Updates tb->focused
+ * and the visual state of the old and new focused tasks.
+ *
+ * Special case: if the panel window itself became active (the user clicked on
+ * the panel), tb->ptk is updated to the previously-focused task so that a
+ * subsequent click on that task's button will iconify it (the second-click
+ * iconify logic in tk_callback_button_release_event).
+ *
+ * The _NET_ACTIVE_WINDOW data is (transfer full) XFree'd here after reading.
+ */
 void
 tb_net_active_window(GtkWidget *widget, taskbar_priv *tb)
 {
@@ -132,6 +215,24 @@ tb_net_active_window(GtkWidget *widget, taskbar_priv *tb)
     return;
 }
 
+/**
+ * tb_propertynotify - dispatch a per-window PropertyNotify X event.
+ * @tb: Taskbar instance.
+ * @ev: The X11 PropertyNotify event.
+ *
+ * Called by tb_event_filter for PropertyNotify events on client windows
+ * (not the root window).  Looks up the task by window ID and dispatches
+ * based on the changed atom:
+ *
+ *   a_NET_WM_DESKTOP  -> update task desktop, refresh display
+ *   XA_WM_NAME        -> re-read and re-display window title
+ *   XA_WM_HINTS       -> re-read icon (may have just been set after map);
+ *                        start/stop flash if urgency hint changed
+ *   a_NET_WM_STATE    -> re-check accept filter; remove task if no longer accepted;
+ *                        otherwise update iconified state and title
+ *   a_NET_WM_ICON     -> refresh ARGB icon
+ *   a_NET_WM_WINDOW_TYPE -> re-check accept filter; remove task if window type changed
+ */
 static void
 tb_propertynotify(taskbar_priv *tb, XEvent *ev)
 {
@@ -203,6 +304,18 @@ tb_propertynotify(taskbar_priv *tb, XEvent *ev)
     return;
 }
 
+/**
+ * tb_event_filter - GdkFilterFunc for per-client-window X events.
+ * @xev:   Raw X11 event.
+ * @event: GDK-translated event (unused).
+ * @tb:    Taskbar instance.
+ *
+ * Installed on each task's GdkWindow via gdk_window_add_filter.
+ * Passes PropertyNotify events to tb_propertynotify and always returns
+ * GDK_FILTER_CONTINUE so GDK continues normal event processing.
+ *
+ * Returns: GDK_FILTER_CONTINUE always (we observe, never consume events).
+ */
 GdkFilterReturn
 tb_event_filter( XEvent *xev, GdkEvent *event, taskbar_priv *tb)
 {
@@ -214,6 +327,15 @@ tb_event_filter( XEvent *xev, GdkEvent *event, taskbar_priv *tb)
     return GDK_FILTER_CONTINUE;
 }
 
+/**
+ * net_active_detect - probe _NET_SUPPORTED for _NET_ACTIVE_WINDOW support.
+ *
+ * Reads _NET_SUPPORTED from the root window and sets the global use_net_active
+ * to TRUE if a_NET_ACTIVE_WINDOW appears in the list.  Called once from
+ * taskbar_constructor before any window activation is attempted.
+ *
+ * The _NET_SUPPORTED data is (transfer full) XFree'd after scanning.
+ */
 void net_active_detect()
 {
     int nitens;

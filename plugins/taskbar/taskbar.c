@@ -1,6 +1,53 @@
+/**
+ * @file taskbar.c
+ * @brief Taskbar plugin — constructor, destructor, and plugin class registration.
+ *
+ * CONSTRUCTOR SEQUENCE
+ * --------------------
+ * taskbar_constructor():
+ *   1. Cast plugin_instance* p to taskbar_priv* tb (safe; plugin_instance is
+ *      the first field of taskbar_priv).
+ *   2. Probe button overhead (get_button_spacing).
+ *   3. Detect _NET_ACTIVE_WINDOW support (net_active_detect).
+ *   4. Set default config values, then override from xconf with XCG macros.
+ *   5. Compute iconsize from panel thickness (ah for horizontal, aw for vertical)
+ *      minus the button overhead height.  Clamp to >= 1.
+ *   6. Build the GtkBar and plugin widget tree (taskbar_build_gui).
+ *   7. Populate task list from the current _NET_CLIENT_LIST (tb_net_client_list).
+ *   8. Refresh display (tb_display).
+ *   9. Update focused window (tb_net_active_window).
+ *
+ * DESTRUCTOR SEQUENCE
+ * -------------------
+ * taskbar_destructor():
+ *   1. Cancel any pending dim idle (pending_dim_id).
+ *   2. Disconnect all FbEv signal handlers by func pointer.
+ *   3. Remove all tasks from the hash table via task_remove_every (which calls
+ *      del_task with hdel=0 for each task — per-window filters removed there).
+ *   4. Destroy the hash table.
+ *   5. XFree(tb->wins) if non-NULL.
+ *   6. gtk_widget_destroy(tb->menu) — the bar itself is destroyed by the parent
+ *      p->pwid destruction.
+ *
+ * NOTE ON MULTI-TU CLASS REGISTRATION
+ * ------------------------------------
+ * The PLUGIN macro is suppressed in taskbar_priv.h.  This file provides
+ * a manual __attribute__((constructor)) ctor() and __attribute__((destructor))
+ * dtor() for class_register / class_unregister, equivalent to what PLUGIN
+ * would have generated for a single-file plugin.
+ */
+
 #include "taskbar_priv.h"
 
 
+/**
+ * taskbar_constructor - initialize the taskbar plugin instance.
+ * @p: Plugin instance allocated by the framework (size = taskbar_priv.priv_size).
+ *
+ * See file-level docblock for the full constructor sequence.
+ *
+ * Returns: 1 on success (plugin framework convention).
+ */
 int
 taskbar_constructor(plugin_instance *p)
 {
@@ -63,6 +110,14 @@ taskbar_constructor(plugin_instance *p)
 }
 
 
+/**
+ * taskbar_destructor - tear down the taskbar plugin instance.
+ * @p: Plugin instance.
+ *
+ * See file-level docblock for the full destructor sequence.
+ * The GtkBar (tb->bar) is not explicitly destroyed here — it is a child of
+ * p->pwid and will be destroyed when the plugin framework destroys p->pwid.
+ */
 static void
 taskbar_destructor(plugin_instance *p)
 {

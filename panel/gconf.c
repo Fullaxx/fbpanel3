@@ -328,9 +328,9 @@ gconf_edit_color_cb(GtkColorButton *w, xconf *xc)
  * If @xc_alpha is provided, alpha editing is enabled and the xc_alpha pointer
  * is stored in the widget's "alpha" object data for the callback.
  *
- * Note: The initial alpha channel is read from @xc_alpha (scaled 0-255 to
- * 0-0xFFFF) but is NOT applied to the displayed button colour (the variable
- * `a` is computed but discarded — see BUG-015 in docs/BUGS_AND_ISSUES.md).
+ * If @xc_alpha is provided the stored 0-255 alpha value is read and applied
+ * to the colour button's initial display via c.alpha before the first
+ * gtk_color_chooser_set_rgba() call.
  *
  * Returns: (transfer none) GtkColorButton.
  */
@@ -344,16 +344,15 @@ gconf_edit_color(gconf_block *b, xconf *xc_color, xconf *xc_alpha)
     gdk_rgba_parse(&c, xconf_get_value(xc_color));
 
     w = gtk_color_button_new();
-    gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(w), &c);
     if (xc_alpha)
     {
-        gint a;
+        gint a = 0;
 
         xconf_get_int(xc_alpha, &a);
-        a <<= 8; /* scale to 0..FFFF from 0..FF */
-        gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(w), &c);
+        c.alpha = CLAMP(a, 0, 255) / 255.0;
         g_object_set_data(G_OBJECT(w), "alpha", xc_alpha);
     }
+    gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(w), &c);
     gtk_color_chooser_set_use_alpha(GTK_COLOR_CHOOSER(w),
         xc_alpha != NULL);
 

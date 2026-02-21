@@ -1,3 +1,13 @@
+## Version: 8.3.46
+* bugfix: fix BUG-016 — gconf_edit_color() now correctly applies the stored
+  alpha value to the initial GtkColorButton display. Previously the 0-255
+  alpha was read from xc_alpha and stored (correctly) in c.alpha, but
+  gtk_color_chooser_set_rgba() was called before the alpha update, so the
+  button always displayed alpha=1.0. Fixed by: (1) moving the
+  gtk_color_chooser_set_rgba() call to after the xc_alpha block so the
+  updated c.alpha is applied, and (2) simplifying the scale from the
+  confusing a<<=8 / 65535.0 formula to CLAMP(a,0,255)/255.0.
+
 ## Version: 8.3.45
 * bugfix: fix BUG-006 — replace exit(1) with ERR()+break in xconf.c
   read_block(). A malformed config file previously caused an immediate

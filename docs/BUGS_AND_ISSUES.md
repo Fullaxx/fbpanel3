@@ -461,7 +461,7 @@ declaration from misc.h entirely since it is already declared via gconf.h.
 
 **File**: `panel/gconf.c:gconf_edit_color` (lines 218-220)
 **Severity**: cosmetic
-**Status**: open
+**Status**: fixed (v8.3.46)
 
 **Description**:
 When `xc_alpha` is provided, the function reads the stored alpha value and

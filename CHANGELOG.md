@@ -1,3 +1,16 @@
+## Version: 8.3.41
+* bugfix: fix three bugs in panel core files (no behaviour change for
+  normal use; all fixes correct latent errors):
+  - BUG-001 (ev.c): add g_strfreev(ev->desktop_names) in fb_ev_finalize
+    so the cached desktop-name array is freed on panel exit even when the
+    EV_DESKTOP_NAMES signal never fired.
+  - BUG-010 (misc.c): remove duplicate tentative definition of
+    a_NET_WM_DESKTOP (second copy was dead weight; both referred to the
+    same storage per C99 but was confusing).
+  - BUG-013 (misc.c): fix indent() bounds check — was using sizeof(space)
+    (40 on 64-bit) instead of G_N_ELEMENTS(space) (5), causing out-of-bounds
+    array access for level >= 5.  Changed to clamp negative values too.
+
 ## Version: 8.3.40
 * docs: add light file-level, constructor, and destructor comments to all 19
   simple plugins (battery, batterytext, chart, cpu, dclock, deskno, deskno2,

@@ -283,20 +283,19 @@ fb_ev_new()
  * fb_ev_finalize - GObject finalize handler for FbEv.
  * @object: GObject being finalized (an FbEv instance).
  *
- * Currently a near-no-op: the commented-out XFreeGC call is a historical
- * artefact from the FbBg copy.
- *
- * NOTE: ev->desktop_names (a g_strv) is NOT freed here.  If the
- * EV_DESKTOP_NAMES signal never fired, the array leaks on exit.
- * This is BUG-001 in docs/BUGS_AND_ISSUES.md.  Since FbEv is a singleton
- * destroyed exactly once on process exit, the OS reclaims the memory.
+ * Frees ev->desktop_names (a g_strv) if the EV_DESKTOP_NAMES signal
+ * never fired (which sets it to NULL via ev_desktop_names()).
+ * The commented-out XFreeGC call is a historical artefact from FbBg.
  */
 static void
 fb_ev_finalize (GObject *object)
 {
-    FbEv *ev G_GNUC_UNUSED;
+    FbEv *ev = FB_EV(object);
 
-    ev = FB_EV (object);
+    if (ev->desktop_names) {
+        g_strfreev(ev->desktop_names);
+        ev->desktop_names = NULL;
+    }
     //XFreeGC(ev->dpy, ev->gc);
 }
 

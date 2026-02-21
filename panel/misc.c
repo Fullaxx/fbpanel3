@@ -10,7 +10,7 @@
  *    Atoms are valid for the lifetime of the X server connection and do not
  *    need to be freed.
  *
- *    Note: a_NET_WM_DESKTOP is declared twice (see BUG-010).
+ *    Note: a_NET_WM_DESKTOP had a duplicate tentative definition (BUG-010, fixed).
  *
  * 2. X11 PROPERTY HELPERS
  *    All property queries use XGetWindowProperty.  The Xlib-allocated buffer
@@ -85,7 +85,7 @@ Atom a_NET_DESKTOP_GEOMETRY;
 Atom a_NET_ACTIVE_WINDOW;
 Atom a_NET_CLOSE_WINDOW;
 Atom a_NET_SUPPORTED;
-Atom a_NET_WM_DESKTOP;  /* NOTE: declared twice — see BUG-010 */
+Atom a_NET_WM_DESKTOP;
 Atom a_NET_WM_STATE;
 Atom a_NET_WM_STATE_SKIP_TASKBAR;
 Atom a_NET_WM_STATE_SKIP_PAGER;
@@ -103,8 +103,6 @@ Atom a_NET_WM_WINDOW_TYPE_UTILITY;
 Atom a_NET_WM_WINDOW_TYPE_SPLASH;
 Atom a_NET_WM_WINDOW_TYPE_DIALOG;
 Atom a_NET_WM_WINDOW_TYPE_NORMAL;
-Atom a_NET_WM_DESKTOP;  /* BUG-010: duplicate tentative definition — harmless in C99
-                         * (both refer to the same storage) but confusing. */
 Atom a_NET_WM_NAME;
 Atom a_NET_WM_VISIBLE_NAME;
 Atom a_NET_WM_STRUT;
@@ -1020,14 +1018,9 @@ gdk_color_to_RRGGBB(GdkRGBA *color)
 
 /**
  * indent - return a static indentation string for the given depth.
- * @level: Indentation level (intended range 0–4).
+ * @level: Indentation level; clamped to [0, 4].
  *
  * Returns one of five pre-allocated static strings (0, 4, 8, 12, 16 spaces).
- *
- * WARNING: The bounds check `level > sizeof(space)` is incorrect — it uses
- * the byte size of the pointer array (40 on 64-bit) rather than the element
- * count (5).  Levels 5–40 bypass the clamp and access out-of-bounds memory.
- * See BUG-013 in docs/BUGS_AND_ISSUES.md.
  *
  * Returns: (transfer none) static string; do NOT g_free().
  */
@@ -1042,7 +1035,7 @@ indent(int level)
         "                ",
     };
 
-    if (level > sizeof(space))
-        level = sizeof(space);
+    if (level < 0 || level >= (int)G_N_ELEMENTS(space))
+        level = G_N_ELEMENTS(space) - 1;
     return space[level];
 }

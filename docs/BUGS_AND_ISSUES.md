@@ -18,7 +18,7 @@ For each issue, the status will be updated when a fix is committed.
 
 **File**: `panel/ev.c:192` (`fb_ev_finalize`)
 **Severity**: minor (leak)
-**Status**: open
+**Status**: fixed (v8.3.41)
 
 **Description**:
 `FbEv::desktop_names` is a `char **` (a `g_strv` owned by FbEv).  It is
@@ -307,7 +307,7 @@ from the API and update all callers.
 
 **File**: `panel/misc.c:45` and `panel/misc.c:63`
 **Severity**: cosmetic
-**Status**: open
+**Status**: fixed (v8.3.41)
 
 **Description**:
 `a_NET_WM_DESKTOP` appears as two separate tentative definitions at file scope.
@@ -369,7 +369,7 @@ semantics clearly at each call site.
 
 **File**: `panel/misc.c:indent`
 **Severity**: minor (potential out-of-bounds array access)
-**Status**: open
+**Status**: fixed (v8.3.41)
 
 **Description**:
 ```c

@@ -680,3 +680,50 @@ ABIs, but it is formally undefined behaviour per the C standard.
 
 **Suspected fix**: Add the unused `gpointer user_data` third parameter to both
 functions (and remove the `(GHRFunc)` cast).
+
+---
+
+### BUG-025 — `image_constructor` frees a transfer-none xconf string
+
+**File**: `plugins/image/image.c:71-74` (`image_constructor`)
+**Severity**: moderate (double-free on panel exit when tooltip is configured)
+**Status**: open
+
+**Description**:
+`tooltip` is read via `XCG(p->xc, "tooltip", &tooltip, str)`, which gives a
+**transfer-none** raw pointer into the xconf tree (never freed by the caller).
+However, the constructor calls `g_free(tooltip)` after setting the markup:
+```c
+if (tooltip) {
+    gtk_widget_set_tooltip_markup(img->mainw, tooltip);
+    g_free(tooltip);   /* BUG: tooltip is transfer-none, owned by xconf */
+}
+```
+The xconf tree owns the string.  When the panel exits and `xconf_del()` is
+called, it attempts to free the same string a second time, causing a
+heap double-free.  Under ASAN this is a hard abort; on plain glibc it
+corrupts the allocator heap.
+
+This only manifests when the `image` plugin is configured with a `tooltip`
+key.
+
+**Suspected fix**: Change `XCG(p->xc, "tooltip", &tooltip, str)` to
+`XCG(p->xc, "tooltip", &tooltip, strdup)` so the caller owns the copy and
+the `g_free(tooltip)` is correct.  Or remove the `g_free(tooltip)` and use
+`str` without freeing.
+
+---
+
+### BUG-026 — `deskno2::fmt` field declared but never used
+
+**File**: `plugins/deskno2/deskno2.c:struct deskno_priv` (labelled `deskno_priv`)
+**Severity**: cosmetic
+**Status**: open
+
+**Description**:
+The `deskno_priv` struct in `deskno2.c` includes a `char *fmt` field that is
+neither read nor written anywhere after the struct is zero-initialised.
+It appears to be a leftover from a planned format-string feature that was
+never implemented.
+
+**Suspected fix**: Remove the `fmt` field from the struct.

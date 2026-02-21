@@ -1,3 +1,24 @@
+/**
+ * @file battery.c
+ * @brief Battery charge indicator plugin for fbpanel.
+ *
+ * Displays battery charge level using the meter_class icon system.
+ * Uses three icon sets:
+ *   batt_working[]  — "battery_0" .. "battery_8"  (discharging)
+ *   batt_charging[] — "battery_charging_0" .. "battery_charging_8"
+ *   batt_na[]       — "battery_na" (no battery or AC-only)
+ *
+ * On Linux, the actual charge level is read from the ACPI sysfs interface
+ * via the os_linux.c.inc include.  On other platforms, battery_update_os()
+ * sets c->exist = FALSE and the "N/A" set is used.
+ *
+ * Config keys: none (icon sizes come from the meter base plugin).
+ *
+ * Delegates construction and destruction to meter_class (obtained via
+ * class_get("meter")/class_put("meter")).  Installs a 2-second GLib timeout
+ * calling battery_update().
+ */
+
 #include "misc.h"
 #include "../meter/meter.h"
 
@@ -12,11 +33,11 @@
 static meter_class *k;
 
 typedef struct {
-    meter_priv meter;
-    int timer;
-    gfloat level;
-    gboolean charging;
-    gboolean exist;
+    meter_priv meter;   /**< Embedded meter_priv; must be first member. */
+    int timer;          /**< GLib timeout source ID. */
+    gfloat level;       /**< Current charge level [0..100]. */
+    gboolean charging;  /**< TRUE if the battery is currently charging. */
+    gboolean exist;     /**< TRUE if a battery was detected. */
 } battery_priv;
 
 static gboolean battery_update_os(battery_priv *c);
@@ -64,6 +85,19 @@ battery_update_os(battery_priv *c)
 
 #endif
 
+/**
+ * battery_update - poll battery state and update the meter icon.
+ * @c: battery_priv. (transfer none)
+ *
+ * Calls battery_update_os() (platform-specific sysfs reader) to populate
+ * c->level, c->charging, and c->exist.  Selects the appropriate icon set
+ * and updates the tooltip markup.  Then delegates to meter_class->set_icons()
+ * and set_level() to update the display.
+ *
+ * Called from the 2-second GLib timeout and once from the constructor.
+ *
+ * Returns: TRUE to keep the timeout active.
+ */
 static gboolean
 battery_update(battery_priv *c)
 {
@@ -87,6 +121,17 @@ battery_update(battery_priv *c)
 }
 
 
+/**
+ * battery_constructor - initialise the battery plugin on top of meter_class.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Obtains the meter_class singleton via class_get("meter") and calls its
+ * constructor to set up the GtkImage in p->pwid.  Installs a 2-second
+ * GLib timeout for periodic updates and calls battery_update() once
+ * immediately.
+ *
+ * Returns: 1 on success, 0 if meter class is unavailable.
+ */
 static int
 battery_constructor(plugin_instance *p)
 {
@@ -102,6 +147,13 @@ battery_constructor(plugin_instance *p)
     return 1;
 }
 
+/**
+ * battery_destructor - stop the polling timer and release meter_class.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Removes the GLib timeout, calls meter_class destructor to disconnect the
+ * icon-theme signal, then releases the meter_class reference via class_put().
+ */
 static void
 battery_destructor(plugin_instance *p)
 {

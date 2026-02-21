@@ -1,8 +1,21 @@
-/*
- * mem usage plugin to fbpanel
+/**
+ * @file mem2.c
+ * @brief Memory and swap usage scrolling chart plugin for fbpanel.
+ *
+ * Displays a scrolling chart of RAM and optionally swap usage using the
+ * chart_class base plugin.  Reads /proc/meminfo on Linux using the same
+ * mt.h-generated lookup table as the mem plugin.  Updates every 2 seconds.
+ *
+ * Config keys (transfer-none xconf strings):
+ *   MemColor  (str, default "red")  — chart bar colour for RAM usage.
+ *   SwapColor (str, optional)       — chart bar colour for swap; omitting
+ *             this key disables the swap row (single-row chart).
+ *
+ * Delegates construction and destruction to chart_class (obtained via
+ * class_get("chart")/class_put("chart")).
  *
  * Licence: GPLv2
- * 
+ *
  * bercik-rrp@users.sf.net
  */
 
@@ -16,10 +29,10 @@
 #define CHECK_PERIOD   2 /* second */
 
 typedef struct {
-    chart_priv chart;
-    int timer;
-    gulong max;
-    gchar *colors[2];
+    chart_priv chart;    /**< Embedded chart_priv; must be first member. */
+    int timer;           /**< GLib timeout source ID. */
+    gulong max;          /**< Unused; retained for struct layout. */
+    gchar *colors[2];    /**< Two-element colour array: [0]=mem, [1]=swap. */
 } mem2_priv;
 
 static chart_class *k;
@@ -65,6 +78,19 @@ mt_match(char *buf, mem_type_t *m)
     return TRUE;
 }
 
+/**
+ * mem_usage - parse /proc/meminfo and push tick values to the chart.
+ * @c: mem2_priv. (transfer none)
+ *
+ * Reads /proc/meminfo using the mt[] lookup table (generated from
+ * mem/mt.h).  Computes used RAM = Total - (Free + Buffers + Cached + Slab)
+ * and used swap = Total - Free.  Converts to fractions [0..1] for the
+ * chart tick and formats a tooltip showing MB values.
+ *
+ * Called from the 2-second GLib timeout and once from the constructor.
+ *
+ * Returns: TRUE to keep the timeout active.
+ */
 static int
 mem_usage(mem2_priv *c)
 {
@@ -114,10 +140,21 @@ mem_usage(mem2_priv *c)
 static int
 mem_usage()
 {
-   
+
 }
 #endif
 
+/**
+ * mem2_constructor - initialise the memory chart plugin on top of chart_class.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Obtains chart_class via class_get("chart"), calls its constructor, then
+ * reads MemColor and SwapColor config keys (both transfer-none).  Configures
+ * 1 or 2 chart rows depending on whether SwapColor is set.  Performs an
+ * initial mem_usage() call and installs a 2-second GLib timeout.
+ *
+ * Returns: 1 on success, 0 if chart class is unavailable.
+ */
 static int
 mem2_constructor(plugin_instance *p)
 {
@@ -148,6 +185,10 @@ mem2_constructor(plugin_instance *p)
 }
 
 
+/**
+ * mem2_destructor - stop the timer and release chart_class.
+ * @p: plugin_instance. (transfer none)
+ */
 static void
 mem2_destructor(plugin_instance *p)
 {

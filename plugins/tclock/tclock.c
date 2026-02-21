@@ -1,3 +1,26 @@
+/**
+ * @file tclock.c
+ * @brief Text clock plugin for fbpanel.
+ *
+ * Displays the current time as a GTK markup label (default format:
+ * "<b>%R</b>", i.e. bold HH:MM).  A configurable tooltip shows the full
+ * date.  Clicking toggles a pop-up GtkCalendar window (or runs a custom
+ * action command).  Updates every second via a GLib timeout.
+ *
+ * Config keys (all transfer-none xconf strings):
+ *   ClockFmt     (str, default "<b>%R</b>") — strftime format for the label.
+ *   TooltipFmt   (str, default "%A %x")     — strftime format for the tooltip.
+ *   Action       (str, optional)            — command to run on click
+ *                                             (overrides ShowCalendar).
+ *   ShowCalendar (bool, default true)       — toggle calendar window on click.
+ *   ShowTooltip  (bool, default true)       — show/update the date tooltip.
+ *
+ * Main widgets:
+ *   dc->main   (GtkEventBox, invisible window, receives button-press events)
+ *   dc->clockw (GtkLabel inside main)
+ *   dc->calendar_window (GtkWindow, created on demand, destroyed on second click)
+ */
+
 #include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -22,19 +45,32 @@
 
 typedef struct {
     plugin_instance plugin;
-    GtkWidget *main;
-    GtkWidget *clockw;
-    GtkWidget *calendar_window;
-    char *tfmt;
-    char *cfmt;
-    char *action;
-    short lastDay;
-    int timer;
-    int show_calendar;
-    int show_tooltip;
+    GtkWidget *main;             /**< GtkEventBox (invisible) receiving click events. */
+    GtkWidget *clockw;           /**< GtkLabel displaying formatted time markup. */
+    GtkWidget *calendar_window;  /**< Pop-up GtkCalendar; NULL when not shown. */
+    char *tfmt;    /**< Tooltip strftime format (transfer-none, xconf-owned). */
+    char *cfmt;    /**< Clock label strftime format (transfer-none, xconf-owned). */
+    char *action;  /**< Optional click command (transfer-none, xconf-owned). */
+    short lastDay; /**< Last tm_mday seen; used to avoid redundant tooltip updates. */
+    int timer;     /**< GLib timeout source ID (1-second interval). */
+    int show_calendar; /**< Boolean: show calendar on click. */
+    int show_tooltip;  /**< Boolean: update the tooltip markup each day. */
 } tclock_priv;
 
 
+/**
+ * clock_update - update the clock label and optionally the tooltip.
+ * @data: pointer to tclock_priv. (transfer none)
+ *
+ * Formats the current local time using cfmt, sets the GtkLabel markup,
+ * then updates the tooltip using tfmt when the day changes (or clears it
+ * when the calendar window is open).  The tooltip string is converted from
+ * locale encoding to UTF-8 before setting it.
+ *
+ * Called from the GLib timeout (every 1 second) and once from the constructor.
+ *
+ * Returns: TRUE to keep the timeout active.
+ */
 static gint
 clock_update(gpointer data)
 {
@@ -64,7 +100,7 @@ clock_update(gpointer data)
                 dc->lastDay = detail->tm_mday;
 
                 rc = strftime(output, sizeof(output), dc->tfmt, detail) ;
-                if (rc && 
+                if (rc &&
                     (utf8 = g_locale_to_utf8(output, -1, NULL, NULL, NULL))) {
                     gtk_widget_set_tooltip_markup(dc->main, utf8);
                     g_free(utf8);
@@ -76,6 +112,18 @@ clock_update(gpointer data)
     return TRUE;
 }
 
+/**
+ * clicked - handle button-press on the event box.
+ * @widget:  the GtkEventBox. (transfer none)
+ * @event:   button press event. (transfer none)
+ * @dc:      tclock_priv. (transfer none)
+ *
+ * If dc->action is set, runs it with g_spawn_command_line_async().
+ * Otherwise, if ShowCalendar is enabled, toggles the pop-up calendar
+ * window and updates the clock display.
+ *
+ * Returns: TRUE (event consumed).
+ */
 static gboolean
 clicked(GtkWidget *widget, GdkEventButton *event, tclock_priv *dc)
 {
@@ -98,6 +146,17 @@ clicked(GtkWidget *widget, GdkEventButton *event, tclock_priv *dc)
     return TRUE;
 }
 
+/**
+ * tclock_constructor - configure and start the text clock plugin.
+ * @p: plugin_instance allocated by the plugin framework. (transfer none)
+ *
+ * Reads config keys (all transfer-none raw xconf pointers stored directly in
+ * tclock_priv without copying).  Creates a GtkEventBox with an invisible
+ * window, creates a GtkLabel inside it, calls clock_update() once to show
+ * the initial time, then installs a 1-second GLib timeout.
+ *
+ * Returns: 1 on success.
+ */
 static int
 tclock_constructor(plugin_instance *p)
 {
@@ -137,6 +196,16 @@ tclock_constructor(plugin_instance *p)
     return 1;
 }
 
+/**
+ * tclock_destructor - stop the timer and destroy the main event box.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Removes the GLib timeout.  Destroys dc->main (which also destroys clockw
+ * as a child).  Any open calendar_window has already been destroyed by GTK
+ * when the parent panel window is cleaned up; dc->calendar_window is not
+ * explicitly destroyed here.  Config strings are transfer-none and must NOT
+ * be freed.
+ */
 static void
 tclock_destructor( plugin_instance *p )
 {

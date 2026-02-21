@@ -1,3 +1,20 @@
+/**
+ * @file mem.c
+ * @brief Memory and swap usage progress-bar plugin for fbpanel.
+ *
+ * Displays one or two GtkProgressBar widgets showing RAM and (optionally)
+ * swap usage.  Reads /proc/meminfo on Linux using a compile-time-generated
+ * lookup table defined in mt.h.  Updates every 3 seconds.
+ *
+ * Config keys:
+ *   ShowSwap (bool, default false) — show a second progress bar for swap.
+ *
+ * Main widget: GtkBox (mem->box) containing GtkProgressBar widgets,
+ * packed into p->pwid.  Progress bars are oriented opposite to the panel
+ * (vertical bars in a horizontal panel, horizontal in a vertical panel)
+ * to act as level indicators.
+ */
+
 #include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -18,11 +35,11 @@
 typedef struct
 {
     plugin_instance plugin;
-    GtkWidget *mem_pb;
-    GtkWidget *swap_pb;
-    GtkWidget *box;
-    int timer;
-    int show_swap;
+    GtkWidget *mem_pb;   /**< GtkProgressBar for RAM usage; owned by mem->box. */
+    GtkWidget *swap_pb;  /**< GtkProgressBar for swap (NULL if ShowSwap=false). */
+    GtkWidget *box;      /**< GtkBox containing the progress bar(s); owned by pwid. */
+    int timer;           /**< GLib timeout source ID; 0 when not active. */
+    int show_swap;       /**< Boolean: show the swap progress bar. */
 } mem_priv;
 
 typedef struct
@@ -80,6 +97,14 @@ mt_match(char *buf, mem_type_t *m)
     return TRUE;
 }
 
+/**
+ * mem_usage - parse /proc/meminfo and populate the static stats struct.
+ *
+ * Reads the mt[] lookup table (generated from mt.h) to parse the fields of
+ * /proc/meminfo.  Computes used RAM as Total - (Free + Buffers + Cached + Slab)
+ * and swap used as Total - Free.  Results are stored in the module-level
+ * stats variable.
+ */
 static void
 mem_usage()
 {
@@ -105,7 +130,7 @@ mem_usage()
         }
     }
     fclose(fp);
-  
+
     stats.mem.total = mt[MT_MemTotal].val;
     stats.mem.used = mt[MT_MemTotal].val -(mt[MT_MemFree].val +
         mt[MT_Buffers].val + mt[MT_Cached].val + mt[MT_Slab].val);
@@ -116,16 +141,26 @@ mem_usage()
 static void
 mem_usage()
 {
-   
+
 }
 #endif
 
+/**
+ * mem_update - refresh progress bars and tooltip from current memory stats.
+ * @mem: mem_priv instance. (transfer none)
+ *
+ * Calls mem_usage(), computes fractional usage [0..1], updates both progress
+ * bars and the tooltip markup.  Called from the GLib timeout and once from
+ * the constructor.
+ *
+ * Returns: TRUE to keep the timeout active.
+ */
 static gboolean
 mem_update(mem_priv *mem)
 {
     gdouble mu, su;
     char str[90];
-    
+
     mu = su = 0;
     bzero(&stats, sizeof(stats));
     mem_usage();
@@ -147,6 +182,13 @@ mem_update(mem_priv *mem)
 }
 
 
+/**
+ * mem_destructor - stop the update timer and destroy the box widget.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Removes the GLib timeout.  Explicitly destroys mem->box (and its children)
+ * rather than relying solely on parent widget destruction.
+ */
 static void
 mem_destructor(plugin_instance *p)
 {
@@ -158,6 +200,17 @@ mem_destructor(plugin_instance *p)
     return;
 }
 
+/**
+ * mem_constructor - create the memory monitor plugin.
+ * @p: plugin_instance allocated by the plugin framework. (transfer none)
+ *
+ * Reads ShowSwap config key.  Creates a GtkBox containing one (or two)
+ * GtkProgressBar widgets oriented perpendicular to the panel direction.
+ * Each progress bar has a fixed minor-dimension of 9 pixels.  Performs an
+ * initial mem_update() call and installs a 3-second GLib timeout.
+ *
+ * Returns: 1 on success.
+ */
 static int
 mem_constructor(plugin_instance *p)
 {

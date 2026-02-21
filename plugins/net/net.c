@@ -1,5 +1,23 @@
-
-/*
+/**
+ * @file net.c
+ * @brief Network TX/RX usage scrolling chart plugin for fbpanel.
+ *
+ * Displays a two-row scrolling chart of network transmit and receive
+ * throughput (in KB/s) using the chart_class base plugin.  On Linux the
+ * data source is /proc/net/dev; on FreeBSD it uses net.if_mib sysctl.
+ * Updates every 2 seconds.  Throughput values are normalised against a
+ * configurable maximum (RxLimit + TxLimit).
+ *
+ * Config keys (transfer-none xconf strings unless noted):
+ *   interface (str, default "eth0")  — network interface name.
+ *   TxLimit   (int, KB/s, default 12)  — normalisation ceiling for TX.
+ *   RxLimit   (int, KB/s, default 120) — normalisation ceiling for RX.
+ *   TxColor   (str, default "violet")  — chart colour for TX row.
+ *   RxColor   (str, default "blue")    — chart colour for RX row.
+ *
+ * Delegates construction and destruction to chart_class (obtained via
+ * class_get("chart")/class_put("chart")).
+ *
  * A little bug fixed by Mykola <mykola@2ka.mipt.ru>:)
  * FreeBSD support is added by Eygene Ryabinkin <rea-fbsd@codelabs.ru>
  */
@@ -24,21 +42,21 @@
 #define CHECK_PERIOD   2 /* second */
 
 struct net_stat {
-    gulong tx, rx;
+    gulong tx, rx; /**< Cumulative byte counters. */
 };
 
 typedef struct {
-    chart_priv chart;
-    struct net_stat net_prev;
-    int timer;
-    char *iface;
+    chart_priv chart;          /**< Embedded chart_priv; must be first member. */
+    struct net_stat net_prev;  /**< Byte counters from previous poll cycle. */
+    int timer;                 /**< GLib timeout source ID. */
+    char *iface;               /**< Interface name (transfer-none, xconf-owned). */
 #if defined(__FreeBSD__)
-    size_t ifmib_row;
+    size_t ifmib_row;          /**< IFMIB row number for the interface. */
 #endif
-    gint max_tx;
-    gint max_rx;
-    gulong max;
-    gchar *colors[2];
+    gint max_tx;   /**< TX normalisation ceiling in KB/s. */
+    gint max_rx;   /**< RX normalisation ceiling in KB/s. */
+    gulong max;    /**< Combined ceiling (max_rx + max_tx). */
+    gchar *colors[2]; /**< Colour strings: [0]=TX, [1]=RX (transfer-none). */
 } net_priv;
 
 static chart_class *k;
@@ -51,6 +69,13 @@ static void net_destructor(plugin_instance *p);
 
 #define init_net_stats(x)
 
+/**
+ * net_get_load_real - read TX/RX byte counters from /proc/net/dev.
+ * @c:   net_priv (for c->iface name). (transfer none)
+ * @net: output struct. (transfer none)
+ *
+ * Returns: 0 on success, -1 if the file or interface line is not found.
+ */
 static int
 net_get_load_real(net_priv *c, struct net_stat *net)
 {
@@ -143,6 +168,18 @@ net_get_load_real(net_priv *c, struct net_stat *net)
 
 #endif
 
+/**
+ * net_get_load - compute per-second KB throughput and push a chart tick.
+ * @c: net_priv. (transfer none)
+ *
+ * Reads current byte counters, subtracts the previous sample, divides by
+ * CHECK_PERIOD seconds, and normalises to [0..1] against c->max.  Pushes
+ * a two-element tick to the chart and updates the tooltip.
+ *
+ * Called from the 2-second GLib timeout and once from the constructor.
+ *
+ * Returns: TRUE to keep the timeout active.
+ */
 static int
 net_get_load(net_priv *c)
 {
@@ -173,6 +210,17 @@ end:
     return TRUE;
 }
 
+/**
+ * net_constructor - initialise the network chart plugin on top of chart_class.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Obtains chart_class via class_get("chart"), calls its constructor, then
+ * reads config keys (transfer-none).  Calls init_net_stats() for FreeBSD
+ * interface setup.  Configures 2 chart rows (TX, RX) and installs a 2-second
+ * GLib timeout.  Calls net_get_load() once immediately.
+ *
+ * Returns: 1 on success, 0 if chart class is unavailable.
+ */
 static int
 net_constructor(plugin_instance *p)
 {
@@ -207,6 +255,10 @@ net_constructor(plugin_instance *p)
 }
 
 
+/**
+ * net_destructor - stop the timer and release chart_class.
+ * @p: plugin_instance. (transfer none)
+ */
 static void
 net_destructor(plugin_instance *p)
 {

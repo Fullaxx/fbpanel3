@@ -1,5 +1,34 @@
 /* dclock is an adaptation of blueclock by Jochen Baier <email@Jochen-Baier.de> */
 
+/**
+ * @file dclock.c
+ * @brief Graphical (pixbuf) digital clock plugin for fbpanel.
+ *
+ * Renders the current time by compositing digit and colon glyphs from the
+ * image file dclock_glyphs.png into a GdkPixbuf backing buffer (dc->clock),
+ * which is displayed via a GtkImage.  Supports horizontal and vertical
+ * orientations; in vertical mode the colon is rendered rotated.
+ *
+ * Config keys:
+ *   TooltipFmt  (str, default "%A %x") — strftime format for the tooltip.
+ *   ShowSeconds (bool, default false)  — include HH:MM:SS instead of HH:MM.
+ *   HoursView   (enum: 12/24, default 24) — 12-hour or 24-hour clock.
+ *   Action      (str, optional)        — shell command to run on click
+ *                                        (overrides calendar popup).
+ *   Color       (str, optional)        — CSS/RGB colour to tint the glyphs.
+ *   ClockFmt    (str, deprecated)      — overrides ShowSeconds/HoursView;
+ *               a warning is emitted and the key is removed from xconf.
+ *
+ * Note: all XCG str pointers are transfer-none (xconf-owned); Color is
+ * obtained via a separate local variable and not stored.
+ *
+ * Main widgets:
+ *   dc->glyphs  (GdkPixbuf of all glyphs; owned by dclock_priv)
+ *   dc->clock   (GdkPixbuf backing buffer for the rendered time; owned here)
+ *   dc->main    (GtkImage displaying dc->clock; added to p->pwid)
+ *   dc->calendar_window (GtkWindow pop-up; NULL when not shown)
+ */
+
 #include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -47,23 +76,33 @@ xconf_enum hours_view_enum[] = {
 typedef struct
 {
     plugin_instance plugin;
-    GtkWidget *main;
-    GtkWidget *calendar_window;
-    gchar *tfmt, tstr[STR_SIZE];
-    gchar *cfmt, cstr[STR_SIZE];
-    char *action;
-    int timer;
-    GdkPixbuf *glyphs; //vert row of '0'-'9' and ':'
-    GdkPixbuf *clock;
-    guint32 color;
-    gboolean show_seconds;
-    gboolean hours_view;
-    GtkOrientation orientation;
+    GtkWidget *main;             /**< GtkImage displaying dc->clock pixbuf. */
+    GtkWidget *calendar_window;  /**< Pop-up calendar; NULL when hidden. */
+    gchar *tfmt, tstr[STR_SIZE]; /**< Tooltip format (xconf-owned) and last rendered value. */
+    gchar *cfmt, cstr[STR_SIZE]; /**< Clock format (static string) and last rendered value. */
+    char *action;    /**< Optional click command (transfer-none, xconf-owned). */
+    int timer;       /**< GLib timeout source ID. */
+    GdkPixbuf *glyphs; /**< Source glyph sheet: vertical row of '0'-'9' and ':' (20px wide each). */
+    GdkPixbuf *clock;  /**< Backing pixbuf for the rendered clock display; owned. */
+    guint32 color;     /**< Glyph tint colour in 0xRRGGBB format (default 0xff000000). */
+    gboolean show_seconds;  /**< Include seconds in the display. */
+    gboolean hours_view;    /**< DC_24H or DC_12H. */
+    GtkOrientation orientation; /**< Panel orientation. */
 } dclock_priv;
 
-//static dclock_priv me;
 
-
+/**
+ * clicked - "button_press_event" handler for the clock widget.
+ * @widget: the GtkBgbox p->pwid. (transfer none)
+ * @event:  button event. (transfer none)
+ * @dc:     dclock_priv. (transfer none)
+ *
+ * If Ctrl+RMB, passes through (returns FALSE) to allow panel right-click menu.
+ * If dc->action is set, runs it with g_spawn_command_line_async().
+ * Otherwise, toggles the pop-up GtkCalendar window.
+ *
+ * Returns: TRUE to consume the event.
+ */
 static gboolean
 clicked(GtkWidget *widget, GdkEventButton *event, dclock_priv *dc)
 {
@@ -91,6 +130,20 @@ clicked(GtkWidget *widget, GdkEventButton *event, dclock_priv *dc)
     return TRUE;
 }
 
+/**
+ * clock_update - redraw the clock pixbuf for the current time.
+ * @dc: dclock_priv. (transfer none)
+ *
+ * Formats the current local time using dc->cfmt and, if it differs from
+ * dc->cstr (the last rendered string), iterates the characters to composite
+ * digit and colon glyphs from dc->glyphs into dc->clock via
+ * gdk_pixbuf_copy_area().  In vertical mode the colon is rotated 270 degrees.
+ * Also updates the tooltip from dc->tfmt once per day.
+ *
+ * Called from the 1-second GLib timeout and once from the constructor.
+ *
+ * Returns: TRUE to keep the timeout active.
+ */
 static gint
 clock_update(dclock_priv *dc)
 {
@@ -98,7 +151,7 @@ clock_update(dclock_priv *dc)
     time_t now;
     struct tm * detail;
     int i, x, y;
-    
+
     time(&now);
     detail = localtime(&now);
 
@@ -143,10 +196,10 @@ clock_update(dclock_priv *dc)
         DBG("\n");
         gtk_widget_queue_draw(dc->main);
     }
-    
+
     if (dc->calendar_window || !strftime(output, sizeof(output),
             dc->tfmt, detail))
-        output[0] = 0;    
+        output[0] = 0;
     if (strcmp(dc->tstr, output))
     {
         strcpy(dc->tstr, output);
@@ -157,18 +210,27 @@ clock_update(dclock_priv *dc)
             g_free(utf8);
         }
         else
-            gtk_widget_set_tooltip_markup(dc->plugin.pwid, NULL);        
+            gtk_widget_set_tooltip_markup(dc->plugin.pwid, NULL);
     }
     return TRUE;
 }
 
+/**
+ * dclock_set_color - recolour all non-transparent, non-black pixels in glyphs.
+ * @glyphs: the glyph GdkPixbuf to modify in place. (transfer none)
+ * @color:  target colour in 0xAARRGGBB format (alpha byte ignored).
+ *
+ * Iterates every RGBA pixel in the glyph sheet and replaces the RGB
+ * components with those from @color, leaving fully transparent or fully
+ * black pixels unchanged.
+ */
 static void
 dclock_set_color(GdkPixbuf *glyphs, guint32 color)
 {
     guchar *p1, *p2;
     int w, h;
     guint r, g, b;
-    
+
     p1 = gdk_pixbuf_get_pixels(glyphs);
     h = gdk_pixbuf_get_height(glyphs);
     r = (color & 0x00ff0000) >> 16;
@@ -193,12 +255,21 @@ dclock_set_color(GdkPixbuf *glyphs, guint32 color)
     return;
 }
 
+/**
+ * dclock_create_pixbufs - allocate dc->clock backing pixbuf for the current config.
+ * @dc: dclock_priv with orientation, show_seconds, and panel->aw set. (transfer none)
+ *
+ * Computes the required pixel dimensions for the clock display (horizontal or
+ * vertical layout, with or without seconds).  For vertical panels whose width
+ * is too narrow for a horizontal layout, switches to the vertical colon format.
+ * Creates dc->clock as a transparent RGBA GdkPixbuf of the computed size.
+ */
 static void
 dclock_create_pixbufs(dclock_priv *dc)
 {
     int width, height;
     GdkPixbuf *ch, *cv;
-    
+
     width = height = SHADOW;
     width += COLON_WIDTH + 4 * DIGIT_WIDTH;
     height += DIGIT_HEIGHT;
@@ -228,6 +299,15 @@ done:
     return;
 }
 
+/**
+ * dclock_destructor - stop the timer and destroy the main GtkImage.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Removes the GLib timeout and explicitly destroys dc->main.
+ * dc->glyphs and dc->clock (GdkPixbuf) are not unreffed here — they leak.
+ * dc->calendar_window, if open, will be closed by GTK's widget destruction
+ * cascade from the parent window.
+ */
 static void
 dclock_destructor(plugin_instance *p)
 {
@@ -239,13 +319,25 @@ dclock_destructor(plugin_instance *p)
     return;
 }
 
+/**
+ * dclock_constructor - load glyphs, create pixbufs, and start the clock.
+ * @p: plugin_instance allocated by the plugin framework. (transfer none)
+ *
+ * Loads dclock_glyphs.png (from IMGPREFIX or SRCIMGPREFIX fallback).
+ * Reads config keys (all XCG str/enum); the deprecated ClockFmt key is
+ * removed from the xconf tree if present.  Allocates dc->clock via
+ * dclock_create_pixbufs(), applies colour tinting if Color is set,
+ * creates a GtkImage, connects "button_press_event", and installs a 1-second
+ * GLib timeout.
+ *
+ * Returns: 1 on success, 0 if the glyph image cannot be loaded.
+ */
 static int
 dclock_constructor(plugin_instance *p)
 {
     gchar *color_str;
     dclock_priv *dc;
-    //int width;
-    
+
     DBG("dclock: use 'tclock' plugin for text version of a time and date\n");
     dc = (dclock_priv *) p;
     dc->glyphs = gdk_pixbuf_new_from_file(IMGPREFIX "/dclock_glyphs.png", NULL);
@@ -293,7 +385,7 @@ dclock_constructor(plugin_instance *p)
     dclock_create_pixbufs(dc);
     if (dc->color != 0xff000000)
         dclock_set_color(dc->glyphs, dc->color);
-  
+
     dc->main = gtk_image_new_from_pixbuf(dc->clock);
     gtk_widget_set_halign(dc->main, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(dc->main, GTK_ALIGN_CENTER);
@@ -302,13 +394,12 @@ dclock_constructor(plugin_instance *p)
     gtk_widget_set_margin_top(dc->main, 1);
     gtk_widget_set_margin_bottom(dc->main, 1);
     gtk_container_add(GTK_CONTAINER(p->pwid), dc->main);
-    //gtk_widget_show(dc->clockw);
     g_signal_connect (G_OBJECT (p->pwid), "button_press_event",
             G_CALLBACK (clicked), (gpointer) dc);
     gtk_widget_show_all(dc->main);
     dc->timer = g_timeout_add(1000, (GSourceFunc) clock_update, (gpointer)dc);
     clock_update(dc);
-    
+
     return 1;
 }
 

@@ -1,5 +1,22 @@
-/*
- * OSS volume plugin. Will works with ALSA since it usually 
+/**
+ * @file volume.c
+ * @brief OSS/ALSA mixer volume control plugin for fbpanel.
+ *
+ * Displays a meter-class icon showing the current volume level and provides
+ * interactive volume control:
+ *   LMB: toggles a floating GtkScale slider window (created on demand near
+ *        the mouse cursor; auto-dismissed 1.2 seconds after the pointer leaves).
+ *   MMB: toggles mute (saves vol in muted_vol, sets vol to 0; restores on unmute).
+ *   Scroll: adjusts volume by 2 steps up or down.
+ *
+ * Reads and writes the OSS mixer via /dev/mixer ioctl() calls (MIXER_READ /
+ * MIXER_WRITE on SOUND_MIXER_VOLUME channel).  Works with ALSA when the
+ * OSS compatibility layer is available.  Returns 0 from the constructor if
+ * /dev/mixer cannot be opened (plugin gracefully disabled).
+ *
+ * Config keys: none.  All state is runtime-only.
+ *
+ * OSS volume plugin. Will works with ALSA since it usually
  * emulates OSS layer.
  */
 
@@ -27,16 +44,19 @@ static gchar *s_names[] = {
     "stock_volume-mute",
     NULL
 };
-  
+
 typedef struct {
-    meter_priv meter;
-    int fd, chan;
-    guchar vol, muted_vol;
-    int update_id, leave_id;
-    int has_pointer;
-    gboolean muted;
-    GtkWidget *slider_window;
-    GtkWidget *slider;
+    meter_priv meter;      /**< Embedded meter_priv; must be first member. */
+    int fd;                /**< File descriptor for /dev/mixer. */
+    int chan;              /**< OSS mixer channel (SOUND_MIXER_VOLUME). */
+    guchar vol;            /**< Last known volume [0..100]. */
+    guchar muted_vol;      /**< Volume saved when muted; restored on unmute. */
+    int update_id;         /**< GLib timeout source ID for periodic vol polling. */
+    int leave_id;          /**< GLib timeout source ID for slider auto-dismiss. */
+    int has_pointer;       /**< Pointer enter/leave counter for slider window. */
+    gboolean muted;        /**< TRUE while muted. */
+    GtkWidget *slider_window; /**< Floating volume slider window; NULL when hidden. */
+    GtkWidget *slider;        /**< GtkScale inside slider_window. */
 } volume_priv;
 
 static meter_class *k;
@@ -45,6 +65,12 @@ static void slider_changed(GtkRange *range, volume_priv *c);
 static gboolean crossed(GtkWidget *widget, GdkEventCrossing *event,
     volume_priv *c);
 
+/**
+ * oss_get_volume - read the current OSS mixer volume.
+ * @c: volume_priv with c->fd and c->chan set. (transfer none)
+ *
+ * Returns: volume in [0..100] (low byte of MIXER_READ result), or 0 on error.
+ */
 static int
 oss_get_volume(volume_priv *c)
 {
@@ -59,6 +85,14 @@ oss_get_volume(volume_priv *c)
     return volume;
 }
 
+/**
+ * oss_set_volume - write a new volume level to the OSS mixer.
+ * @c:      volume_priv. (transfer none)
+ * @volume: new volume in [0..100].
+ *
+ * Duplicates the value into both the left and right channel bytes
+ * (value | (value << 8)) as expected by MIXER_WRITE.
+ */
 static void
 oss_set_volume(volume_priv *c, int volume)
 {
@@ -68,6 +102,19 @@ oss_set_volume(volume_priv *c, int volume)
     return;
 }
 
+/**
+ * volume_update_gui - refresh the meter icon and slider position from the mixer.
+ * @c: volume_priv. (transfer none)
+ *
+ * Reads current volume via oss_get_volume().  If the muted/unmuted transition
+ * changed, swaps the icon set (names vs s_names).  Updates the meter level,
+ * updates the tooltip (when the slider is hidden), or synchronises the slider
+ * position (when shown) without triggering the slider_changed callback.
+ *
+ * Called from the 1-second GLib timeout and from slider_changed/icon_clicked.
+ *
+ * Returns: TRUE to keep the timeout active.
+ */
 static gboolean
 volume_update_gui(volume_priv *c)
 {
@@ -97,6 +144,13 @@ volume_update_gui(volume_priv *c)
     return TRUE;
 }
 
+/**
+ * slider_changed - "value_changed" handler for the GtkScale slider.
+ * @range: the GtkScale. (transfer none)
+ * @c:     volume_priv. (transfer none)
+ *
+ * Writes the new slider value to the OSS mixer and updates the GUI.
+ */
 static void
 slider_changed(GtkRange *range, volume_priv *c)
 {
@@ -107,12 +161,23 @@ slider_changed(GtkRange *range, volume_priv *c)
     return;
 }
 
+/**
+ * volume_create_slider - create the floating slider window.
+ * @c: volume_priv. (transfer none)
+ *
+ * Creates an undecorated, non-resizable GTK_WINDOW_TOPLEVEL positioned at
+ * the current mouse cursor.  The GtkScale (vertical, inverted, range 0..100)
+ * is wrapped in a GtkFrame inside the window.  "value_changed", "enter-notify",
+ * and "leave-notify" signals on the slider are connected.
+ *
+ * Returns: (transfer full) the new GtkWindow.
+ */
 static GtkWidget *
 volume_create_slider(volume_priv *c)
 {
     GtkWidget *slider, *win;
     GtkWidget *frame;
-    
+
     win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_default_size(GTK_WINDOW(win), 180, 180);
     gtk_window_set_decorated(GTK_WINDOW(win), FALSE);
@@ -127,7 +192,7 @@ volume_create_slider(volume_priv *c)
     gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_ETCHED_IN);
     gtk_container_add(GTK_CONTAINER(win), frame);
     gtk_container_set_border_width(GTK_CONTAINER(frame), 1);
-    
+
     slider = gtk_scale_new_with_range(GTK_ORIENTATION_VERTICAL, 0.0, 100.0, 1.0);
     gtk_widget_set_size_request(slider, 25, 82);
     gtk_scale_set_draw_value(GTK_SCALE(slider), TRUE);
@@ -143,11 +208,24 @@ volume_create_slider(volume_priv *c)
     g_signal_connect(G_OBJECT(slider), "leave-notify-event",
         G_CALLBACK(crossed), (gpointer)c);
     gtk_container_add(GTK_CONTAINER(frame), slider);
-    
+
     c->slider = slider;
     return win;
-}  
+}
 
+/**
+ * icon_clicked - "button_press_event" handler for the meter icon area.
+ * @widget: the p->pwid GtkBgbox. (transfer none)
+ * @event:  button event. (transfer none)
+ * @c:      volume_priv. (transfer none)
+ *
+ * LMB (button 1): toggles the slider window.  Clears the tooltip when the
+ *   slider is shown; restores the tooltip when hidden (via volume_update_gui).
+ *   Also cancels the auto-dismiss timeout if one is pending.
+ * MMB (button 2): toggles mute, saves/restores the volume level.
+ *
+ * Returns: FALSE (does not consume the event fully, allowing GTK to proceed).
+ */
 static gboolean
 icon_clicked(GtkWidget *widget, GdkEventButton *event, volume_priv *c)
 {
@@ -170,7 +248,7 @@ icon_clicked(GtkWidget *widget, GdkEventButton *event, volume_priv *c)
     }
     if (!(event->type == GDK_BUTTON_PRESS && event->button == 2))
         return FALSE;
-    
+
     if (c->muted) {
         volume = c->muted_vol;
     } else {
@@ -183,11 +261,23 @@ icon_clicked(GtkWidget *widget, GdkEventButton *event, volume_priv *c)
     return FALSE;
 }
 
+/**
+ * icon_scrolled - "scroll-event" handler: adjust volume by 2 steps.
+ * @widget: the meter icon widget. (transfer none)
+ * @event:  scroll event. (transfer none)
+ * @c:      volume_priv. (transfer none)
+ *
+ * Scroll-up or scroll-left increases by 2; scroll-down or scroll-right
+ * decreases by 2.  Clamped to [0..100].  If muted, adjusts muted_vol
+ * without writing to the mixer.
+ *
+ * Returns: TRUE (event consumed).
+ */
 static gboolean
 icon_scrolled(GtkWidget *widget, GdkEventScroll *event, volume_priv *c)
 {
     int volume;
-    
+
     volume = (c->muted) ? c->muted_vol : ((meter_priv *) c)->level;
     volume += 2 * ((event->direction == GDK_SCROLL_UP
             || event->direction == GDK_SCROLL_LEFT) ? 1 : -1);
@@ -195,8 +285,8 @@ icon_scrolled(GtkWidget *widget, GdkEventScroll *event, volume_priv *c)
         volume = 100;
     if (volume < 0)
         volume = 0;
-    
-    if (c->muted) 
+
+    if (c->muted)
         c->muted_vol = volume;
     else {
         oss_set_volume(c, volume);
@@ -205,6 +295,15 @@ icon_scrolled(GtkWidget *widget, GdkEventScroll *event, volume_priv *c)
     return TRUE;
 }
 
+/**
+ * leave_cb - auto-dismiss timeout callback: destroy the slider window.
+ * @c: volume_priv. (transfer none)
+ *
+ * Called 1.2 seconds after the pointer leaves both the icon and slider.
+ * Destroys the slider window and resets leave_id and has_pointer.
+ *
+ * Returns: FALSE (one-shot timeout).
+ */
 static gboolean
 leave_cb(volume_priv *c)
 {
@@ -215,6 +314,18 @@ leave_cb(volume_priv *c)
     return FALSE;
 }
 
+/**
+ * crossed - "enter-notify-event" / "leave-notify-event" handler.
+ * @widget: the widget generating the crossing event. (transfer none)
+ * @event:  crossing event. (transfer none)
+ * @c:      volume_priv. (transfer none)
+ *
+ * Maintains c->has_pointer as an enter/leave counter.  When positive,
+ * cancels any pending auto-dismiss timeout.  When it reaches zero, installs
+ * a 1.2-second auto-dismiss timeout if the slider window is open.
+ *
+ * Returns: FALSE.
+ */
 static gboolean
 crossed(GtkWidget *widget, GdkEventCrossing *event, volume_priv *c)
 {
@@ -236,11 +347,22 @@ crossed(GtkWidget *widget, GdkEventCrossing *event, volume_priv *c)
     return FALSE;
 }
 
+/**
+ * volume_constructor - open /dev/mixer and set up the volume plugin.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Obtains meter_class via class_get("meter") and calls its constructor.
+ * Opens /dev/mixer O_RDWR; returns 0 if unavailable (plugin disabled).
+ * Sets the icon set to names[], installs a 1-second polling timeout,
+ * and connects scroll, button_press, and enter/leave-notify signals on pwid.
+ *
+ * Returns: 1 on success, 0 if meter class unavailable or /dev/mixer fails.
+ */
 static int
 volume_constructor(plugin_instance *p)
 {
     volume_priv *c;
-    
+
     if (!(k = class_get("meter")))
         return 0;
     if (!PLUGIN_CLASS(k)->constructor(p))
@@ -267,6 +389,16 @@ volume_constructor(plugin_instance *p)
     return 1;
 }
 
+/**
+ * volume_destructor - stop polling, destroy slider, release meter_class.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Removes the 1-second update timeout.  Destroys the slider window if open
+ * (note: leave_id is not cancelled here — harmless since the window
+ * destruction prevents the leave_cb from accessing freed memory for 1.2s,
+ * but leave_id should ideally be removed too).  Calls meter_class destructor
+ * and releases the class reference.
+ */
 static void
 volume_destructor(plugin_instance *p)
 {

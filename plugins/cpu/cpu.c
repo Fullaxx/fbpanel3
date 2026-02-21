@@ -1,11 +1,24 @@
-
-
-/*
+/**
+ * @file cpu.c
+ * @brief CPU usage scrolling chart plugin for fbpanel.
+ *
+ * Displays a scrolling bar chart of total CPU utilisation (user+nice+sys
+ * as a fraction of total CPU time) using the chart_class base plugin.
+ * On Linux the data source is /proc/stat; on FreeBSD it uses kern.cp_time
+ * via sysctl.  Updates every 1 second.
+ *
+ * Config keys (transfer-none xconf strings):
+ *   Color (str, default "green") — CSS colour string for the chart bar.
+ *
+ * Delegates construction and destruction to chart_class (obtained via
+ * class_get("chart")/class_put("chart")).
+ *
  * Free BSD support
  * A little bug fixed by Mykola <mykola@2ka.mipt.ru>:)
  * FreeBSD support added by Andreas Wiese <aw@instandbesetzt.net>
  * and was extended by Eygene Ryabinkin <rea-fbsd@codelabs.ru>
  */
+
 
 #include <string.h>
 #include "misc.h"
@@ -21,14 +34,14 @@
 #endif
 
 struct cpu_stat {
-    gulong u, n, s, i, w; // user, nice, system, idle, wait
+    gulong u, n, s, i, w; /* user, nice, system, idle, wait */
 };
 
 typedef struct {
-    chart_priv chart;
-    struct cpu_stat cpu_prev;
-    int timer;
-    gchar *colors[1];
+    chart_priv chart;       /**< Embedded chart_priv; must be first member. */
+    struct cpu_stat cpu_prev; /**< CPU counters from previous poll cycle. */
+    int timer;              /**< GLib timeout source ID. */
+    gchar *colors[1];       /**< Single-element colour array for chart_set_rows(). */
 } cpu_priv;
 
 static chart_class *k;
@@ -37,6 +50,12 @@ static void cpu_destructor(plugin_instance *p);
 
 
 #if defined __linux__
+/**
+ * cpu_get_load_real - read raw CPU counters from /proc/stat.
+ * @cpu: output struct to fill. (transfer none)
+ *
+ * Returns: 0 on success, -1 if /proc/stat cannot be opened.
+ */
 static int
 cpu_get_load_real(struct cpu_stat *cpu)
 {
@@ -90,6 +109,19 @@ cpu_get_load_real(struct cpu_stat *s)
 }
 #endif
 
+/**
+ * cpu_get_load - compute CPU load fraction and push a tick to the chart.
+ * @c: cpu_priv. (transfer none)
+ *
+ * Reads current CPU counters, subtracts the previous sample to get deltas,
+ * computes total[0] = active / (active + idle + wait) in [0.0..1.0], and
+ * calls k->add_tick().  Also updates the tooltip with the current percentage.
+ * Stores the current counters in c->cpu_prev for the next cycle.
+ *
+ * Called from the 1-second GLib timeout and once from the constructor.
+ *
+ * Returns: TRUE to keep the timeout active.
+ */
 static int
 cpu_get_load(cpu_priv *c)
 {
@@ -125,6 +157,16 @@ end:
 
 }
 
+/**
+ * cpu_constructor - initialise the CPU chart plugin on top of chart_class.
+ * @p: plugin_instance. (transfer none)
+ *
+ * Obtains chart_class via class_get("chart"), calls its constructor, then
+ * reads the "Color" config key (transfer-none), configures one data row, and
+ * installs a 1-second GLib timeout.  Calls cpu_get_load() once immediately.
+ *
+ * Returns: 1 on success, 0 if chart class is unavailable.
+ */
 static int
 cpu_constructor(plugin_instance *p)
 {
@@ -146,6 +188,10 @@ cpu_constructor(plugin_instance *p)
 }
 
 
+/**
+ * cpu_destructor - stop the timer and release chart_class.
+ * @p: plugin_instance. (transfer none)
+ */
 static void
 cpu_destructor(plugin_instance *p)
 {

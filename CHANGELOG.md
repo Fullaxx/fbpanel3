@@ -1,3 +1,16 @@
+## Version: 8.3.40
+* docs: add light file-level, constructor, and destructor comments to all 19
+  simple plugins (battery, batterytext, chart, cpu, dclock, deskno, deskno2,
+  genmon, image, mem, mem2, meter, net, separator, space, tclock, user, volume,
+  wincmd).  Each file receives a docblock describing purpose, config keys, main
+  widget, and any non-obvious ownership notes.  Constructor and destructor
+  functions receive brief parameter and return-value annotations.  Struct
+  fields are annotated with ownership (transfer-none xconf pointers vs
+  transfer-full allocated values) where behaviour is non-obvious.  Records
+  BUG-025 (image.c: g_free on transfer-none XCG str tooltip causes double-free
+  on panel exit) and BUG-026 (deskno2.c: fmt field declared but never used).
+  No logic changes.
+
 ## Version: 8.3.39
 * docs: add full Doxygen-style comments to plugins/launchbar/launchbar.c and
   plugins/icons/icons.c.  Documents launchbar btn/launchbar_priv struct fields

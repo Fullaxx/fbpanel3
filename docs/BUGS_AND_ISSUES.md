@@ -486,3 +486,45 @@ for use by the save callback, not for display initialisation.
 c.alpha = a / 65535.0;   /* convert 0..FFFF back to 0.0..1.0 */
 gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(w), &c);
 ```
+
+---
+
+### BUG-017 — `do_app_file` infinite loop when Exec ends with `%`
+
+**File**: `plugins/menu/system_menu.c:do_app_file` (Exec format-code stripping loop)
+**Severity**: minor (hang under rare edge-case)
+**Status**: open
+
+**Description**:
+The loop that strips XDG Exec format codes (`%f`, `%u`, etc.) by replacing them
+with spaces uses `strchr` to find the next `%`:
+
+```c
+while ((dot = strchr(action, '%'))) {
+    if (dot[1] != '\0')
+        dot[0] = dot[1] = ' ';
+}
+```
+
+When the Exec string ends with a lone `%` (i.e., `dot[1] == '\0'`), the `if`
+condition is false so `dot[0]` is not replaced.  The next call to `strchr`
+finds the same `%` at the same position, resulting in an infinite loop.
+
+This can be triggered by a malformed or hand-crafted `.desktop` file with an
+`Exec` value ending in `%`.
+
+**Suspected fix**:
+Replace the while-loop approach with a forward scan that advances past the
+format code regardless:
+
+```c
+for (dot = action; (dot = strchr(dot, '%')) != NULL; ) {
+    if (dot[1] != '\0') {
+        dot[0] = dot[1] = ' ';
+        dot += 2;
+    } else {
+        dot[0] = ' ';
+        dot += 1;
+    }
+}
+```

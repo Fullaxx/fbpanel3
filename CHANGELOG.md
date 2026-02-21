@@ -1,3 +1,16 @@
+## Version: 8.3.36
+* docs: add full Doxygen-style comments to plugins/menu/ (menu.h, menu.c,
+  system_menu.c).  Documents menu_priv struct fields (ownership of GtkMenu,
+  GtkWidget button, xconf tree, timer IDs), the xconf tree expansion pipeline
+  (menu_expand_xc deep-copy with systemmenu/include expansion), menu item
+  construction (node dispatcher for separator/item/menu, xconf str ownership,
+  expand_tilda pattern), rebuild lifecycle (schedule_rebuild_menu 2-second
+  delay, rebuild_menu, check_system_menu 30-second poll), the XDG desktop
+  scanner (category hash table, directory deduplication sentinel, .desktop
+  filter rules, Exec format-code stripping, icon extension stripping), and
+  the goto-retry empty-category pruning loop.  Records BUG-017 (do_app_file
+  infinite loop when Exec ends with bare '%').  No logic changes.
+
 ## Version: 8.3.35
 * docs: add full Doxygen-style comments to plugins/taskbar/ (all 5 files).
   Documents task and taskbar_priv struct fields (ownership, lifetime), the

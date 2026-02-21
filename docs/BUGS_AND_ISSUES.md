@@ -138,7 +138,7 @@ Window fb_ev_active_window(FbEv *ev)
 
 **File**: `panel/gtkbgbox.c:358` (`gtk_bgbox_set_bg_inherit`)
 **Severity**: minor
-**Status**: open
+**Status**: resolved in v8.3.50
 
 **Description**:
 The `BG_INHERIT` background mode is defined in the enum but its handler
@@ -158,8 +158,10 @@ config sets `bg_type = BG_INHERIT`, the widget will have no background.
 
 **Impact**: Minor — no known config uses `BG_INHERIT` in current profiles.
 
-**Suspected fix**: Either implement (copy background from parent window) or
-document as intentionally unimplemented and remove from the enum.
+**Resolution (v8.3.50)**: Documented as intentionally unimplemented.  Removed the
+dead `priv` re-fetch.  The draw handler falls back to CSS rendering when
+`priv->pixmap == NULL`, which is acceptable for current use.  No config currently
+uses `BG_INHERIT`.
 
 ---
 

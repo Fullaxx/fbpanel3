@@ -1,3 +1,9 @@
+## Version: 8.3.50
+* cleanup: close BUG-004 — document gtk_bgbox_set_bg_inherit() as intentionally
+  unimplemented. Remove the dead priv re-fetch that overwrote the caller-supplied
+  pointer without doing anything. The draw handler falls back to CSS when
+  priv->pixmap is NULL, which is acceptable since no current config uses BG_INHERIT.
+
 ## Version: 8.3.49
 * docs: close BUG-002 — the single-threaded assumption in fb_bg_finalize()
   was already documented during the Phase 2 documentation pass. Remove the

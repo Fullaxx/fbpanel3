@@ -501,7 +501,8 @@ gtk_bgbox_bg_changed(FbBg *bg, GtkWidget *widget)
  *   - Acquires FbBg singleton if not already held (fb_bg_get_for_display).
  *   - Connects the "changed" signal (sid) if not already connected.
  *   - For BG_ROOT: calls gtk_bgbox_set_bg_root() to fill priv->pixmap.
- *   - For BG_INHERIT: calls gtk_bgbox_set_bg_inherit() (currently a stub).
+ *   - For BG_INHERIT: calls gtk_bgbox_set_bg_inherit() (intentionally unimplemented;
+ *     priv->pixmap stays NULL and CSS rendering is used as fallback).
  *
  * Queues a full redraw (gtk_widget_queue_draw) at the end.
  */
@@ -573,17 +574,19 @@ gtk_bgbox_set_bg_root(GtkWidget *widget, GtkBgboxPrivate *priv)
 }
 
 /**
- * gtk_bgbox_set_bg_inherit - stub for BG_INHERIT mode.
- * @widget: GtkBgbox widget.
- * @priv:   Private state (unused).
+ * gtk_bgbox_set_bg_inherit - intentionally unimplemented BG_INHERIT handler.
+ * @widget: GtkBgbox widget (unused; BG_INHERIT not supported).
+ * @priv:   Private state (unused; no pixmap is set).
  *
- * Currently a no-op.  Intended to copy the parent widget's background
- * into priv->pixmap.  See BUG-004 in docs/BUGS_AND_ISSUES.md.
+ * BG_INHERIT was intended to copy the parent widget's background into
+ * priv->pixmap.  No panel config currently uses BG_INHERIT mode, and the
+ * implementation was never written.  priv->pixmap is left NULL; the draw
+ * handler falls back to CSS rendering, which is acceptable for current use.
  */
 static void
 gtk_bgbox_set_bg_inherit(GtkWidget *widget, GtkBgboxPrivate *priv)
 {
-    priv = gtk_bgbox_get_instance_private(GTK_BGBOX(widget));
-
+    (void)widget;
+    (void)priv;
     return;
 }

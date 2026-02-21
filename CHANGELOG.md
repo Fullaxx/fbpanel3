@@ -1,3 +1,17 @@
+## Version: 8.3.38
+* docs: add full Doxygen-style comments to plugins/tray/ (main.c,
+  eggtraymanager.h, eggtraymanager.c, fixedtip.c).  Documents the XEMBED
+  system tray protocol (selection ownership, MANAGER ClientMessage broadcast,
+  SYSTEM_TRAY_REQUEST_DOCK handling, balloon message assembly from 20-byte
+  chunks, SelectionClear handover), EggTrayManager struct fields (opcode/
+  selection/message_data atoms, invisible widget lifetime, socket_table
+  ownership), all five signals (tray_icon_added/removed, message_sent/
+  cancelled, lost_selection), GtkSocket XEMBED lifecycle, the GTK3 port
+  stubs (expose/transparency no-ops), tray_priv struct fields, GtkBar
+  dimension management in tray_size_alloc, FbBg background change handling,
+  and fixed-position balloon tooltip positioning and GTK widget lifetime.
+  No logic changes.
+
 ## Version: 8.3.37
 * docs: add full Doxygen-style comments to plugins/pager/pager.c.  Documents
   task and desk struct fields (ownership, lifecycle, GDK filter, cairo surface

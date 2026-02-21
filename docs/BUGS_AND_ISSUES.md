@@ -167,7 +167,7 @@ document as intentionally unimplemented and remove from the enum.
 
 **File**: `panel/xconf.c:374` (`xconf_cmp`)
 **Severity**: minor (logic inversion)
-**Status**: open
+**Status**: fixed (v8.3.47)
 
 **Description**:
 The `xconf_cmp()` function is documented to return TRUE if trees differ.

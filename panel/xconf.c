@@ -599,17 +599,16 @@ xconf *xconf_dup(xconf *xc)
  *          TRUE  if trees differ in any name, value, or child structure.
  *          TRUE  if exactly one argument is NULL.
  *
- * Note: the "both NULL → FALSE" branch uses !(a || b) which is correct but
- * non-obvious; see BUG-005 in docs/BUGS_AND_ISSUES.md.
+ * The NULL-handling uses explicit !a && !b / !a || !b tests for clarity.
  */
 gboolean
 xconf_cmp(xconf *a, xconf *b)
 {
     GSList *as, *bs;
 
-    if (!(a || b))
+    if (!a && !b)
         return FALSE;
-    if (!(a && b))
+    if (!a || !b)
         return TRUE;
 
     if (g_ascii_strcasecmp(a->name, b->name))

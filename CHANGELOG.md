@@ -1,3 +1,10 @@
+## Version: 8.3.47
+* cleanup: fix BUG-005 — rewrite the two NULL-guard expressions in
+  xconf_cmp() for clarity. The original !(a || b) / !(a && b) forms were
+  logically correct but counterintuitive (double-negation of OR/AND).
+  Replaced with the equivalent and immediately readable !a && !b / !a || !b.
+  No behaviour change.
+
 ## Version: 8.3.46
 * bugfix: fix BUG-016 — gconf_edit_color() now correctly applies the stored
   alpha value to the initial GtkColorButton display. Previously the 0-255

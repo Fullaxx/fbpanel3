@@ -304,23 +304,19 @@ gchar *gdk_color_to_RRGGBB(GdkRGBA *color);
 
 /**
  * configure - open (or raise) the panel preferences dialog.
+ * @xc: Panel xconf tree; passed to the preferences dialog for editing.
  *
  * Defined in gconf_panel.c.  Creates or presents the configuration window
  * containing global panel settings and per-plugin configuration.
  */
-void configure();
+void configure(xconf *xc);
 
 /**
  * indent - return a static string of spaces for the given indentation level.
- * @level: Indentation depth (0–4).
+ * @level: Indentation depth; clamped to [0, 4].
  *
  * Returns one of five pre-allocated static strings: "", "    ", "        ",
  * "            ", "                " (0, 4, 8, 12, 16 spaces).
- *
- * WARNING: the bounds check uses sizeof(space) instead of G_N_ELEMENTS(space),
- * making it incorrect on any platform where sizeof(gchar*) != 1.  On 64-bit
- * systems sizeof(space) == 40, so levels 5–40 bypass the clamp and return
- * out-of-bounds memory.  See BUG-013 in docs/BUGS_AND_ISSUES.md.
  *
  * Returns: (transfer none) static string; do NOT g_free().
  */

@@ -148,8 +148,8 @@ typedef struct _panel
     GtkOrientation orientation; /**< GTK_ORIENTATION_HORIZONTAL (top/bottom) or VERTICAL (left/right).
                                *   Derived from edge in panel_parse_global(). */
     int widthtype, width;     /**< Width type (WIDTH_xxx) and value from config. */
-    int heighttype, height;   /**< Height type (always HEIGHT_PIXEL after parse; see BUG-014)
-                               *   and panel thickness in pixels. */
+    int heighttype, height;   /**< Height type (HEIGHT_PIXEL or HEIGHT_REQUEST) and panel
+                               *   thickness in pixels.  Default: HEIGHT_PIXEL. */
     int round_corners_radius; /**< Corner rounding radius in pixels (if round_corners set). */
     int max_elem_height;      /**< Maximum height for plugin content areas.  Defaults to
                                *   p->height when unconfigured (see panel_parse_global). */

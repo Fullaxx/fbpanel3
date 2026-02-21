@@ -1,3 +1,18 @@
+## Version: 8.3.44
+* bugfix: fix BUG-014 and BUG-015 in panel.c and misc.h:
+  - BUG-014 (panel.c): remove the unconditional `p->heighttype = HEIGHT_PIXEL`
+    assignment in panel_parse_global() that followed the XCG config read.
+    The override meant the config file's "heighttype" value was always
+    silently discarded; HEIGHT_REQUEST mode (auto-size to content) could
+    never be activated from config. The default is already set to HEIGHT_PIXEL
+    earlier in the function, so removing the override has no effect for
+    standard configs that do not specify a heighttype.
+  - BUG-015 (misc.h): update the configure() prototype from the old-style
+    `void configure()` (unspecified parameters) to the correct prototyped
+    form `void configure(xconf *xc)`, matching the gconf_panel.c definition.
+    The mismatch was latent: any call via the misc.h prototype with no
+    arguments would silently pass garbage as xc.
+
 ## Version: 8.3.43
 * bugfix: fix BUG-007 — rename default_plugin_edit_config to
   default_plugin_instance_edit_config in plugin.c to match the declaration

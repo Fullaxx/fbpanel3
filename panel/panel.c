@@ -1015,10 +1015,6 @@ panel_start_gui(panel *p)
  * setlayer, layer, roundcorners, roundcornersradius, transparent, alpha,
  * tintcolor, maxelemheight.
  *
- * Note: p->heighttype is overridden to HEIGHT_PIXEL unconditionally at line 738,
- * making the config value of "heighttype" ineffective.  See BUG-014 in
- * docs/BUGS_AND_ISSUES.md.
- *
  * Returns: 1 always (return value is unused by the caller).
  */
 static int
@@ -1092,7 +1088,6 @@ panel_parse_global(xconf *xc)
         p->width = 100;
     if (p->widthtype == WIDTH_PERCENT && p->width > 100)
         p->width = 100;
-    p->heighttype = HEIGHT_PIXEL;
     if (p->heighttype == HEIGHT_PIXEL) {
         if (p->height < PANEL_HEIGHT_MIN)
             p->height = PANEL_HEIGHT_MIN;

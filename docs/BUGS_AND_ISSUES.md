@@ -398,7 +398,7 @@ return space[level];
 
 **File**: `panel/panel.c:1095` (`panel_parse_global`)
 **Severity**: minor (config option rendered ineffective)
-**Status**: open
+**Status**: fixed (v8.3.44)
 
 **Description**:
 `panel_parse_global` reads `heighttype` from the xconf config at line 1053:
@@ -427,7 +427,7 @@ is silently broken.
 
 **File**: `panel/misc.h:311` (declaration) and `panel/gconf_panel.c:413` (definition)
 **Severity**: minor (latent linkage issue)
-**Status**: open
+**Status**: fixed (v8.3.44)
 
 **Description**:
 `misc.h` declares:

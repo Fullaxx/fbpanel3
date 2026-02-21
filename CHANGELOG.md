@@ -1,3 +1,13 @@
+## Version: 8.3.43
+* bugfix: fix BUG-007 — rename default_plugin_edit_config to
+  default_plugin_instance_edit_config in plugin.c to match the declaration
+  in plugin.h. The two names were mismatched: plugin.h declared
+  default_plugin_instance_edit_config but plugin.c defined
+  default_plugin_edit_config. Any code calling through the header-declared
+  name would fail to link (or resolve to the wrong symbol via
+  --export-dynamic). No callers exist today, but the mismatch was a latent
+  linker bug for any new code that calls the preferences-page fallback.
+
 ## Version: 8.3.42
 * bugfix: implement three missing accessor function bodies in panel/ev.c
   (BUG-003). fb_ev_active_window(), fb_ev_client_list(), and

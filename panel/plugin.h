@@ -114,7 +114,7 @@ struct _plugin_instance;
  * @save_config: Optional; called when the user saves the preferences dialog.
  *               May be NULL.
  * @edit_config: Optional; returns a GtkWidget for the plugin's preferences
- *               page.  May be NULL (panel uses default_plugin_edit_config).
+ *               page.  May be NULL (panel uses default_plugin_instance_edit_config).
  */
 typedef struct {
     /* Panel-managed fields — do not set these from the plugin */
@@ -257,16 +257,12 @@ int plugin_start(plugin_instance *this);
 void plugin_stop(plugin_instance *this);
 
 /**
- * default_plugin_edit_config - fallback Preferences widget for plugins
- *   that do not implement edit_config.
+ * default_plugin_instance_edit_config - fallback Preferences widget for
+ *   plugins that do not implement edit_config.
  * @pl: Plugin instance.
  *
  * Returns: (transfer full) GtkWidget showing a "not implemented" message
  *   with instructions for manual config editing.
- *
- * NOTE: declared as default_plugin_instance_edit_config in this header
- * but defined as default_plugin_edit_config in plugin.c — name mismatch.
- * See BUG-007 in docs/BUGS_AND_ISSUES.md.
  */
 GtkWidget *default_plugin_instance_edit_config(plugin_instance *pl);
 

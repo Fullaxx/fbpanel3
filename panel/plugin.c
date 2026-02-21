@@ -350,21 +350,16 @@ plugin_stop(plugin_instance *this)
 
 
 /**
- * default_plugin_edit_config - fallback Preferences widget for plugins
- *   without a custom edit_config callback.
+ * default_plugin_instance_edit_config - fallback Preferences widget for
+ *   plugins without a custom edit_config callback.
  * @pl: Plugin instance whose class->name is shown in the message.
  *
  * Returns: (transfer full) GtkWidget (GtkBox) containing a GtkLabel with
  *   a human-readable message directing the user to edit the config file
  *   manually.
- *
- * NOTE: this function is defined here as default_plugin_edit_config but
- * declared in plugin.h as default_plugin_instance_edit_config.  The names
- * do not match, so calls to the header-declared name are unresolved.
- * See BUG-007 in docs/BUGS_AND_ISSUES.md.
  */
 GtkWidget *
-default_plugin_edit_config(plugin_instance *pl)
+default_plugin_instance_edit_config(plugin_instance *pl)
 {
     GtkWidget *vbox, *label;
     gchar *msg;

@@ -231,7 +231,7 @@ would need to handle NULL gracefully.
 
 **File**: `panel/plugin.h:123` and `panel/plugin.c:202`
 **Severity**: moderate (unresolved symbol in any caller)
-**Status**: open
+**Status**: fixed (v8.3.43)
 
 **Description**:
 `plugin.h` declares:

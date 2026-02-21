@@ -1,3 +1,11 @@
+## Version: 8.3.45
+* bugfix: fix BUG-006 — replace exit(1) with ERR()+break in xconf.c
+  read_block(). A malformed config file previously caused an immediate
+  hard process exit with no cleanup. Now an error message is logged via
+  ERR() and the parse loop breaks early, returning whatever was
+  successfully parsed so far. The panel continues with a partial config
+  rather than crashing.
+
 ## Version: 8.3.44
 * bugfix: fix BUG-014 and BUG-015 in panel.c and misc.h:
   - BUG-014 (panel.c): remove the unconditional `p->heighttype = HEIGHT_PIXEL`

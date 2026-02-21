@@ -205,7 +205,7 @@ confusing.  A clearer form would be `if (!a && !b) return FALSE`.
 
 **File**: `panel/xconf.c:320` (`read_block`)
 **Severity**: minor (robustness)
-**Status**: open
+**Status**: fixed (v8.3.45)
 
 **Description**:
 When the config file parser encounters an unknown token, it calls

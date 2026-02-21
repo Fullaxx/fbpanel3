@@ -484,8 +484,8 @@ read_line(FILE *fp, line *s)
  *
  * Returns: (transfer full) root node of the parsed block.
  *
- * Note: calls exit(1) on syntax errors — see BUG-006 in
- * docs/BUGS_AND_ISSUES.md.
+ * On an unrecognised token the loop logs an error and breaks, returning
+ * the partially-built tree.  The caller will use whatever was parsed.
  */
 static xconf *
 read_block(FILE *fp, gchar *name)
@@ -510,8 +510,9 @@ read_block(FILE *fp, gchar *name)
         }
         else
         {
-            printf("syntax error\n");
-            exit(1);
+            ERR("xconf: syntax error in config block '%s' — unknown token type %d\n",
+                name, s.type);
+            break;
         }
     }
     return x;

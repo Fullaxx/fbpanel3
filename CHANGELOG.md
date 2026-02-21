@@ -1,3 +1,14 @@
+## Version: 8.3.52
+* cleanup: close BUG-011 and BUG-012 in misc.c — both are documentation/clarity
+  fixes with no logic change.
+  BUG-011: Replace the dead bare semicolon (commented-out MAX line) in
+  calculate_width() with a clear comment explaining that percent-width panels
+  intentionally do not apply xmargin to their computed width; xmargin still
+  shifts the panel's position. Update docblock accordingly.
+  BUG-012: Remove the "See BUG-012" self-reference from gdk_color_to_RRGGBB()
+  docblock; the static-buffer semantics are already documented inline as
+  (transfer none) with a single-threaded safety note.
+
 ## Version: 8.3.51
 * cleanup: fix BUG-009 — remove the unused `label` parameter from fb_button_new().
   All three callers (launchbar, menu, wincmd) passed NULL; the parameter was never

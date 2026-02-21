@@ -762,9 +762,10 @@ get_net_wm_window_type(Window win, net_wm_window_type *nwwt)
  *           percentage to pixels.  Clamped to [0, scrw].
  * @x:       In/out: panel origin offset; adjusted based on @allign and @xmargin.
  *
- * Note: for WIDTH_PERCENT with allign != ALLIGN_CENTER, xmargin is silently
- * ignored (the clamping line is commented out).  This may be unintentional.
- * See BUG-011 in docs/BUGS_AND_ISSUES.md.
+ * Note: for WIDTH_PERCENT with allign != ALLIGN_CENTER, xmargin affects the
+ * panel's on-screen position (via *x adjustment below) but NOT its computed
+ * width.  The user-specified percentage is preserved as-is.  xmargin is only
+ * applied to width for WIDTH_PIXEL panels to prevent overflow past the margin.
  */
 static void
 calculate_width(int scrw, int wtype, int allign, int xmargin,
@@ -791,8 +792,7 @@ calculate_width(int scrw, int wtype, int allign, int xmargin,
             xmargin = 0;
         }
         if (wtype == WIDTH_PERCENT)
-            //*panw = MAX(scrw - xmargin, *panw);
-            ;
+            /* Percent panels keep their computed width; xmargin shifts position only. */;
         else
             *panw = MIN(scrw - xmargin, *panw);
     }
@@ -1003,7 +1003,6 @@ gcolor2rgb24(GdkRGBA *color)
  *
  * Writes into a static 10-byte buffer — not re-entrant and invalidated by
  * the next call.  Safe in practice because fbpanel is single-threaded.
- * See BUG-012 in docs/BUGS_AND_ISSUES.md.
  *
  * Returns: (transfer none) pointer to static buffer; do NOT g_free().
  */

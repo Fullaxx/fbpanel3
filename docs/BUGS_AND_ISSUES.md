@@ -322,7 +322,7 @@ is declared in the global section but never given an `XInternAtom` call in
 
 **File**: `panel/misc.c:calculate_width`
 **Severity**: minor (surprising behaviour)
-**Status**: open
+**Status**: resolved in v8.3.52
 
 **Description**:
 In `calculate_width`, when `wtype == WIDTH_PERCENT` and `allign != ALLIGN_CENTER`,
@@ -337,9 +337,13 @@ aligned panels.  The xmargin value is still used to compute the panel's X positi
 (further down in the function), so the panel is shifted but not shrunk to avoid
 overlapping its own margin.
 
-**Suspected fix**: Determine the intended behaviour (should percent panels honour
-xmargin for width clamping?) and either restore the commented line or document
-why the no-op is intentional.
+**Resolution (v8.3.52)**: The commented-out `MAX` line was incorrect (it would
+have ensured a *minimum* width of `scrw - xmargin`, the opposite of clamping).
+The intended behaviour is: percent-width panels honour their specified percentage
+without width adjustment; xmargin still shifts the position.  This is consistent
+with pixel-width panels where `MIN(scrw - xmargin, *panw)` clamps overflow only.
+Replaced the dead `;` with a clear inline comment explaining the design choice
+and removed the stale commented-out line.
 
 ---
 
@@ -347,7 +351,7 @@ why the no-op is intentional.
 
 **File**: `panel/misc.c:gdk_color_to_RRGGBB`
 **Severity**: cosmetic (not thread-safe; safe in single-threaded use)
-**Status**: open
+**Status**: resolved in v8.3.52
 
 **Description**:
 `gdk_color_to_RRGGBB` writes into a `static gchar str[10]` and returns a pointer
@@ -356,9 +360,11 @@ In a multi-threaded context this would be a data race; in fbpanel's single-threa
 GTK main loop it is safe.  However callers that store the pointer across GTK
 iterations may see stale data.
 
-**Suspected fix**: Return a `g_strdup_printf`-allocated string (transfer full) and
-update all callers to `g_free()` the result, or document the static-buffer
-semantics clearly at each call site.
+**Resolution (v8.3.52)**: Documented clearly in the function's docblock as
+`(transfer none)` with a note that the static buffer is safe for fbpanel's
+single-threaded use.  No callers store the return value across GTK iterations.
+The "See BUG-012" self-reference in the docblock was removed once the design
+choice was confirmed and documented.
 
 ---
 
